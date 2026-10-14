@@ -1,0 +1,12 @@
+SET @dashboard_index = IF(EXISTS(SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='qa_messages' AND INDEX_NAME='ix_dashboard_qa'), 'SELECT 1', 'CREATE INDEX ix_dashboard_qa ON qa_messages(role,created_at,status,latency_ms)');
+PREPARE dashboard_index FROM @dashboard_index;
+EXECUTE dashboard_index;
+DEALLOCATE PREPARE dashboard_index;
+SET @dashboard_index = IF(EXISTS(SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='documents' AND INDEX_NAME='ix_dashboard_documents'), 'SELECT 1', 'CREATE INDEX ix_dashboard_documents ON documents(created_at,id)');
+PREPARE dashboard_index FROM @dashboard_index;
+EXECUTE dashboard_index;
+DEALLOCATE PREPARE dashboard_index;
+SET @dashboard_index = IF(EXISTS(SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='audit_logs' AND INDEX_NAME='ix_dashboard_audit'), 'SELECT 1', 'CREATE INDEX ix_dashboard_audit ON audit_logs(created_at,id)');
+PREPARE dashboard_index FROM @dashboard_index;
+EXECUTE dashboard_index;
+DEALLOCATE PREPARE dashboard_index;

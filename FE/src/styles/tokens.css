@@ -1,0 +1,19 @@
+:root {
+  --primary: #6B9DFF;
+  --background: #F7F9FC;
+  --surface: #FFFFFF;
+  --surface-soft: #F7F9FC;
+  --primary-soft: #DCEAFF;
+  --text: #172B4D;
+  --text-muted: #526581;
+  --action: #315FA3;
+  --action-hover: #21467F;
+  --border: #E5EAF2;
+  --success: #166534;
+  --error: #B42318;
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --font-body: 'Be Vietnam Pro', system-ui, sans-serif;
+  --shadow-card: 0 3px 14px #172b4d04;
+  --shadow-elevated: 0 15px 50px #172b4d20;
+}

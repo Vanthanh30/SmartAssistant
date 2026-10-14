@@ -1,0 +1,46 @@
+{
+  "name": "study-assistant-api",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0 || >=24"
+  },
+  "scripts": {
+    "spike:extract": "node scripts/spike/extract-pdf.mjs",
+    "check:contract": "node scripts/spike/check-contract.mjs",
+    "dev": "node scripts/dev.js",
+    "dev:api": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:migrate": "node scripts/migrate.js",
+    "db:seed": "node scripts/seed-admin.js",
+    "lint": "eslint .",
+    "dev:worker": "node src/jobs/worker.js",
+    "dev:rag": "node scripts/dev.js rag",
+    "start:worker": "node src/jobs/worker.js",
+    "start:rag": "node scripts/dev.js rag",
+    "storage:reconcile": "node scripts/reconcile-storage.js",
+    "storage:cleanup-media": "node scripts/cleanup-cloud-media.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cloudinary": "^2.11.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "multer": "^2.4.0",
+    "mysql2": "^3.24.5",
+    "nodemailer": "^10.0.16",
+    "pdfjs-dist": "6.4.299",
+    "sharp": "^0.35.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "12.1.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0"
+  }
+}

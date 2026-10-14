@@ -1,0 +1,25 @@
+.venv/
+node_modules/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+.env.*
+!.env.example
+!.env.test.example
+BE/storage/
+docs/evidence/runtime/
+FE/dist/
+FE/test-results/
+FE/playwright-report/
+FE/ui-review/runner-first-attempt/
+
+FE/public/pdfjs/
+
+# Local documentation, runtime data and review artifacts are not published.
+/docs/
+.vscode/
+FE/ui-review/
+BE/.cache/
+*.log
+FE/ui-*.png
