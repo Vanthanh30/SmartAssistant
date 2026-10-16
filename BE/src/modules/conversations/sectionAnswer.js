@@ -4,7 +4,7 @@ const fold = text => text.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g,
 const stop = new Set('co bao nhieu nhung cac loai nao va neu ten tung la gi cua trong cho toi hay gom liet ke chuc nang trinh bay'.split(' '));
 
 // Recover complete numbered sections across overlapping chunks, without inventing items.
-export function sectionAnswer(sources, question, budget = 6000) {
+export function sectionAnswer(sources, question) {
   if (!/bao nhiêu|những|các loại|từng loại|liệt kê|gồm|chức năng|cấu tạo|quá trình|các bước|phân loại|nêu tên/i.test(question)) return null;
   const terms = [...new Set(fold(question).match(/[a-z0-9]+/g) || [])].filter(term => !stop.has(term));
   if (!terms.length) return null;
@@ -33,12 +33,6 @@ export function sectionAnswer(sources, question, budget = 6000) {
       const section = combined.slice(heading.index, end).split(/\n(?=Câu\s+\d+[.:])/u)[0].trim();
       const subheadings = [...section.matchAll(/^([a-z])[.)]\s+[^\n]+/gm)];
       if (subheadings.length < 2) continue;
-      if (Buffer.byteLength(section, 'utf8') > budget) {
-        incomplete = { status: 'insufficient_context', model: 'document-extractive',
-          answer: 'Nhóm ý liên quan vượt ngân sách trả lời trực tiếp. Hãy mở trang nguồn để xem đầy đủ hoặc hỏi riêng từng phần.',
-          sources: spans.filter(span => span.end > heading.index && span.start < heading.index + section.length).map(span => span.source) };
-        continue;
-      }
       // A consecutive a/b/c group must not be silently truncated halfway through.
       const labels = subheadings.map(match => match[1]);
       if (labels[0] !== 'a' || labels.some((label, i) => label.charCodeAt(0) !== 97 + i)) continue;

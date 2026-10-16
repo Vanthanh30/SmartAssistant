@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { AppError } from '../../shared/AppError.js';
 import { learningProvider } from './provider.js';
 import { learningRepository } from './repository.js';
+import { itemEvidencePage } from './evidencePage.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const missing = () => new AppError(404,'LEARNING_NOT_FOUND','Không tìm thấy bộ học hoặc lần làm bài.');
@@ -40,6 +41,14 @@ export function learningService(pool, config) {
     const set = await ownSet(db,owner,id);
     const [items] = await learningRepository(db).items([id]);
     const [citations] = await learningRepository(db).citations([id]);
+    const ids = set.kind === 'quiz' && !reveal ? [] : [...new Set(citations.filter(c => c.chunk_id && c.document_id && c.document_status === 'ready' && !c.deleted_at).map(c => c.chunk_id))];
+    const [chunks] = ids.length ? await learningRepository(db).citationChunks(ids,owner,set.course_id) : [[]];
+    const chunkMap = new Map(chunks.map(chunk => [String(chunk.chunkId),chunk]));
+    const pagesFor = (citation,item) => {
+      const source = chunkMap.get(String(citation.chunk_id));
+      return source && String(source.documentId) === String(citation.document_id)
+        ? itemEvidencePage(source,item,set.kind) : null;
+    };
     return { ...setDto(set), items: items.map(item => ({ id: String(item.id), position: item.position, prompt: item.prompt,
       ...(set.kind === 'quiz' ? { choices: typeof item.choices === 'string' ? JSON.parse(item.choices) : item.choices } : { answer: item.answer }),
       ...(reveal && set.kind === 'quiz' ? { correctIndex: item.correct_index, explanation: item.explanation } : {}),
@@ -47,6 +56,7 @@ export function learningService(pool, config) {
       citations: set.kind === 'quiz' && !reveal ? [] : citations.filter(c => String(c.item_id) === String(item.id)).map(c => ({
         chunkId: c.chunk_id, documentId: c.document_id ? String(c.document_id) : null, fileName: c.file_name,
         pageFrom: c.page_from, pageTo: c.page_to, excerpt: c.excerpt,
+        ...pagesFor(c,item),
         sourceDeleted: !c.chunk_id || !c.document_id || c.document_status !== 'ready' || !!c.deleted_at,
       })),
     })) };
@@ -112,13 +122,14 @@ export function learningService(pool, config) {
         const generated = await generate(input,sources,selected => verify(pool,owner,courseId,selected));
         savedId = await transaction(pool,async db => {
           await active(db,actor); await verify(db,owner,courseId,generated.sources,true);
-          const [created] = await learningRepository(db).insertSet([courseId,owner,input.kind,input.title,generated.model,generated.sources.length]);
+          const [created] = await learningRepository(db).insertSet([courseId,owner,input.kind,input.title || (input.kind === 'quiz' ? 'Quiz ôn tập từ tài liệu' : 'Flashcard ôn tập từ tài liệu'),generated.model,generated.sources.length]);
           const id = String(created.insertId);
           for (const [position,item] of generated.items.entries()) {
             const [entry] = await learningRepository(db).insertItem([id,position+1,item.prompt,input.kind === 'quiz' ? item.choices[item.correctIndex] : item.answer,input.kind === 'quiz' ? JSON.stringify(item.choices) : null,item.correctIndex ?? null,item.explanation ?? null]);
             for (const chunkId of item.citedChunkIds) {
               const source = generated.sources.find(s => s.chunkId === chunkId);
-              await learningRepository(db).insertCitation([String(entry.insertId),source.chunkId,source.documentId,source.fileName,source.pageFrom,source.pageTo,source.content]);
+              const page = itemEvidencePage(source,item,input.kind) || source;
+              await learningRepository(db).insertCitation([String(entry.insertId),source.chunkId,source.documentId,source.fileName,page.pageFrom,page.pageTo,source.content]);
             }
           }
           await learningRepository(db).completeGeneration([id,reserved.requestId]);
@@ -167,7 +178,7 @@ export function learningService(pool, config) {
         if (attempt.completed_at) { if (attempt.submission_hash !== submissionHash) throw new AppError(409,'ATTEMPT_COMPLETED','Bài đã nộp, không thể đổi đáp án.'); return; }
         const [items] = await learningRepository(db).gradeItems([attempt.set_id]);
         const map = new Map(canonical.map(a => [a.itemId,a.choice]));
-        if (map.size !== canonical.length || map.size !== items.length || items.some(item => !map.has(String(item.id)))) throw new AppError(422,'INVALID_ANSWERS','Gửi đúng mỗi câu một lần; câu bỏ qua có choice=null.');
+        if (map.size !== canonical.length || map.size !== items.length || items.some(item => !map.has(String(item.id)))) throw new AppError(422,'INVALID_ANSWERS',"Gửi đúng mỗi câu một lần; câu bỏ qua có lua_chon=null.");
         let correct = 0;
         for (const item of items) {
           const choice = map.get(String(item.id)); const isCorrect = choice === item.correct_index;

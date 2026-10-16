@@ -8,22 +8,22 @@ export function deletionService(pool) {
     try {
       await db.beginTransaction();
       if (actor.role === 'admin') {
-        const [admins] = await db.execute('SELECT role,status FROM users WHERE id=? FOR UPDATE',[actor.id]);
+        const [admins] = await db.execute("SELECT vai_tro,trang_thai FROM nguoi_dung WHERE ma=? FOR UPDATE",[actor.id]);
         if (admins[0]?.role !== 'admin' || admins[0]?.status !== 'active') throw new AppError(403,'ACCOUNT_BLOCKED','Phiên quản trị không còn hợp lệ.');
-        const [sessions] = await db.execute('SELECT id FROM auth_sessions WHERE user_id=? AND csrf_token=? AND revoked_at IS NULL AND expires_at>UTC_TIMESTAMP(3) FOR UPDATE',[actor.id,context.csrfToken ?? '']);
+        const [sessions] = await db.execute("SELECT ma FROM phien_dang_nhap WHERE ma_nguoi_dung=? AND token_chong_csrf=? AND luc_thu_hoi IS NULL AND luc_het_han>UTC_TIMESTAMP(3) FOR UPDATE",[actor.id,context.csrfToken ?? '']);
         if (!sessions.length) throw new AppError(401,'SESSION_EXPIRED','Phiên quản trị đã hết hạn.');
       }
-      const [allowed] = await db.execute("SELECT id FROM documents WHERE id=? AND (?='admin' OR user_id=?)", [id, actor.role, actor.id]);
+      const [allowed] = await db.execute("SELECT ma FROM tai_lieu WHERE ma=? AND (?='admin' OR ma_nguoi_dung=?)", [id, actor.role, actor.id]);
       if (!allowed.length) throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy tài liệu.');
       // Match worker lock order: job rows before document, so deletion cannot race stage commits.
-      const [jobs] = await db.execute('SELECT id,type,status FROM processing_jobs WHERE document_id=? ORDER BY id FOR UPDATE', [id]);
-      const document = (await db.execute('SELECT * FROM documents WHERE id=? FOR UPDATE', [id]))[0][0];
+      const [jobs] = await db.execute("SELECT ma,loai_tac_vu,trang_thai FROM tac_vu_pdf WHERE ma_tai_lieu=? ORDER BY ma FOR UPDATE", [id]);
+      const document = (await db.execute("SELECT * FROM tai_lieu WHERE ma=? FOR UPDATE", [id]))[0][0];
       if (document.status === 'deleted') { await db.commit(); return { documentId: String(id), status: 'deleted' }; }
       const deletionJob=jobs.find(job=>job.type==='delete_pdf');
       if(document.status==='deleting' && ['queued','running'].includes(deletionJob?.status)){await db.commit();return {documentId:String(id),status:'deleting'};}
-      await db.execute("UPDATE documents SET status='deleting',error_code=NULL,error_message=NULL WHERE id=?", [id]);
-      await db.execute("UPDATE processing_jobs SET status='completed',locked_by=NULL,locked_until=NULL WHERE document_id=? AND type<>'delete_pdf' AND status IN ('queued','running')", [id]);
-      await db.execute("INSERT INTO processing_jobs(document_id,type) VALUES (?,'delete_pdf') ON DUPLICATE KEY UPDATE attempts=IF(status IN ('failed','completed'),0,attempts),next_run_at=IF(status IN ('failed','completed'),UTC_TIMESTAMP(3),next_run_at),last_error=IF(status IN ('failed','completed'),NULL,last_error),status=IF(status IN ('failed','completed'),'queued',status)", [id]);
+      await db.execute("UPDATE tai_lieu SET trang_thai='deleting',ma_loi=NULL,thong_bao_loi=NULL WHERE ma=?", [id]);
+      await db.execute("UPDATE tac_vu_pdf SET trang_thai='completed',ma_tien_trinh_khoa=NULL,khoa_den_luc=NULL WHERE ma_tai_lieu=? AND loai_tac_vu<>'delete_pdf' AND trang_thai IN ('queued','running')", [id]);
+      await db.execute("INSERT INTO tac_vu_pdf(ma_tai_lieu,loai_tac_vu) VALUES (?,'delete_pdf') ON DUPLICATE KEY UPDATE so_lan_thu=IF(trang_thai IN ('failed','completed'),0,so_lan_thu),luc_chay_tiep=IF(trang_thai IN ('failed','completed'),UTC_TIMESTAMP(3),luc_chay_tiep),loi_gan_nhat=IF(trang_thai IN ('failed','completed'),NULL,loi_gan_nhat),trang_thai=IF(trang_thai IN ('failed','completed'),'queued',trang_thai)", [id]);
       if(actor.role==='admin') await writeAudit(db,{actorId:actor.id,action:document.status==='deleting' ? 'document.delete_retry' : 'document.delete_requested',entityType:'document',entityId:id,
         metadata:{ownerId:String(document.user_id),courseId:String(document.course_id),previousStatus:document.status,status:'deleting'}});
       await db.commit(); return { documentId: String(id), status: 'deleting' };

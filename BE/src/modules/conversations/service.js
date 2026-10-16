@@ -1,13 +1,12 @@
+import { presentationBlocks, storedBlocks } from './presentation.js';
 import { answerPolicy } from './answerPolicy.js';
 import { conversationRepository } from './repository.js';
 import { createHash } from 'node:crypto';
 import { AppError } from '../../shared/AppError.js';
-import { llmProvider } from './provider.js';
 import { historyRepository } from './historyRepository.js';
 
 const conversationDto = row => ({ id: String(row.id), courseId: String(row.course_id), title: row.title, createdAt: row.created_at, updatedAt: row.updated_at });
 export function conversationService(pool, config) {
-  const provider = llmProvider(config);
   const history = historyRepository(pool);
   async function activeActor(db, actor) {
     // Same lock order as account blocking: user first, then its exact session.
@@ -48,7 +47,7 @@ export function conversationService(pool, config) {
     if (row.status === 'failed') throw new AppError(row.error_status || 502, row.error_code || 'QUESTION_FAILED', row.content ? 'Yêu cầu trước đã thất bại. Hãy gửi yêu cầu mới để thử lại.' : 'Không thể trả lời.', { newRequestRequired: true });
     const [answers] = await conversationRepository(db).answer( [conversation, input.requestId]);
     if (!answers.length) throw new AppError(409, 'REQUEST_INTERRUPTED', 'Kết quả chưa được xác nhận.');
-    return { answer: answers[0].content, status: answers[0].status, messageId: String(answers[0].id), citations: await citations(db, answers[0].id) };
+    return { answer: answers[0].content, blocks: storedBlocks(answers[0].answer_blocks), status: answers[0].status, messageId: String(answers[0].id), citations: await citations(db, answers[0].id) };
   }
   return {
     async create(owner, course, input) {
@@ -73,7 +72,7 @@ export function conversationService(pool, config) {
         const page = rows.slice(0,limit).reverse();
         // IDs come only from this owned conversation's page, within the same snapshot.
         const sources = await batchCitations(db, page.filter(row => row.role === 'assistant').map(row => row.id));
-        const messages = page.map(row => ({ id:String(row.id),requestId:row.request_id,role:row.role,content:row.content,status:row.status,errorCode:row.error_code,createdAt:row.created_at,citations:sources.get(String(row.id)) ?? [] }));
+        const messages = page.map(row => ({ id:String(row.id),requestId:row.request_id,role:row.role,content:row.content,blocks:storedBlocks(row.answer_blocks),status:row.status,errorCode:row.error_code,createdAt:row.created_at,citations:sources.get(String(row.id)) ?? [] }));
         await db.commit();
         return { conversation:{ ...conversationDto(conversation),courseName:courses[0].name },messages,hasOlderMessages:rows.length>limit,nextBeforeMessageId:rows.length>limit ? String(page[0].id) : null };
       } catch(error) { await db.rollback(); throw error; } finally { db.release(); }
@@ -125,7 +124,8 @@ export function conversationService(pool, config) {
           await conversationRepository(db).initialTitle([[...input.question].slice(0,150).join(''),id,id]);
           await db.commit(); reserved = true;
         } catch (error) { await db.rollback(); throw error; }
-        const { result, started } = await answerPolicy(db, config, provider)({ owner, conversation, id, input, answerMode });
+        const { result, started } = await answerPolicy(db, config)({ owner, conversation, input, answerMode });
+        const blocks = presentationBlocks(result.answer, result.sources);
         await db.beginTransaction();
         try {
           // Revocation during retrieval/provider work must win before any successful result writes.
@@ -136,7 +136,7 @@ export function conversationService(pool, config) {
             const [chunks] = await conversationRepository(db).lockChunk( [source.chunkId, source.documentId]);
             if (!docs.length || !chunks.length) throw new AppError(409, 'SOURCE_CHANGED', 'Nguồn đã thay đổi trong lúc trả lời. Vui lòng gửi lại câu hỏi.');
           }
-          const [answer] = await conversationRepository(db).insertAnswer( [id, input.requestId, hash, result.answer, result.status, result.model || null, Date.now() - started, result.answerOrigin]);
+          const [answer] = await conversationRepository(db).insertAnswer( [id, input.requestId, hash, result.answer, result.status, result.model || null, Date.now() - started, result.answerOrigin, JSON.stringify(blocks)]);
           for (const source of result.sources) await conversationRepository(db).insertCitation(
             [answer.insertId, source.chunkId, source.documentId, source.fileName, source.pageFrom, source.pageTo, source.content, source.score]);
           await conversationRepository(db).completeQuestion( [result.status, Date.now()-requestStarted, result.answerOrigin, id, input.requestId]);
@@ -144,7 +144,7 @@ export function conversationService(pool, config) {
           // Locks serialize concurrent revoke/block; check expiry again after source/citation writes.
           await activeActor(db, actor);
           await db.commit(); reserved = false;
-          return { answer: result.answer, status: result.status, messageId: String(answer.insertId), citations: await citations(db, answer.insertId) };
+          return { answer: result.answer, blocks, status: result.status, messageId: String(answer.insertId), citations: await citations(db, answer.insertId) };
         } catch (error) { await db.rollback(); throw error; }
       } catch (error) {
         if (reserved) await conversationRepository(db).failQuestion( [error.code || 'QUESTION_FAILED', error.status || 503, Date.now()-requestStarted, id, input.requestId]);

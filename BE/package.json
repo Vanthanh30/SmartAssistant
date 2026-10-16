@@ -6,12 +6,9 @@
     "node": ">=22.13.0 || >=24"
   },
   "scripts": {
-    "spike:extract": "node scripts/spike/extract-pdf.mjs",
-    "check:contract": "node scripts/spike/check-contract.mjs",
     "dev": "node scripts/dev.js",
     "dev:api": "node --watch src/server.js",
     "start": "node src/server.js",
-    "db:migrate": "node scripts/migrate.js",
     "db:seed": "node scripts/seed-admin.js",
     "lint": "eslint .",
     "dev:worker": "node src/jobs/worker.js",
@@ -19,7 +16,12 @@
     "start:worker": "node src/jobs/worker.js",
     "start:rag": "node scripts/dev.js rag",
     "storage:reconcile": "node scripts/reconcile-storage.js",
-    "storage:cleanup-media": "node scripts/cleanup-cloud-media.js"
+    "storage:cleanup-media": "node scripts/cleanup-cloud-media.js",
+    "db:create": "node scripts/create-database.js",
+    "db:status": "node scripts/database-status.js",
+    "db:reset": "node scripts/reset-development-database.js",
+    "verify:database": "node scripts/verify-vietnamese-db.js",
+    "db:erd": "node scripts/export-erd.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -32,7 +34,6 @@
     "helmet": "^8.3.0",
     "multer": "^2.4.0",
     "mysql2": "^3.24.5",
-    "nodemailer": "^10.0.16",
     "pdfjs-dist": "6.4.299",
     "sharp": "^0.35.5",
     "zod": "^4.6.5"

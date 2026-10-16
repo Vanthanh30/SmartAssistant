@@ -1,5 +1,5 @@
+import { assertSchema } from '../config/schema.js';
 import { processCloudQueue } from './cloudWorker.js';
-import { processMailQueue } from './mailWorker.js';
 import { loadConfig } from '../config/env.js';
 import { createPool } from '../config/db.js';
 import { log } from '../config/logger.js';
@@ -25,13 +25,7 @@ async function stop(code = 0) {
 }
 try {
   const config = loadConfig(); pool = createPool(config);
-  await pool.query('SELECT id FROM documents LIMIT 1');
-  await pool.query('SELECT id FROM processing_jobs LIMIT 1');
-  await pool.query('SELECT id FROM chunks LIMIT 1');
-  await pool.query('SELECT course_id FROM course_indexes LIMIT 1');
-  if (!(await pool.execute('SELECT name FROM schema_migrations WHERE name=?', ['014_cloud_avatar_key_length.sql']))[0].length) throw new Error('CLOUD_ONLY_STORAGE_MIGRATION_REQUIRED');
-  await pool.query('SELECT public_id FROM cloud_assets LIMIT 1');
-  await pool.query('SELECT id FROM mail_outbox LIMIT 1');
+  await assertSchema(pool);
   await prepareStorage(config);
   const repository = jobRepository(pool, config);
   if (config.RAG_SERVICE_TOKEN.length < 32 || config.RAG_SERVICE_TOKEN.startsWith('replace_')) throw new Error('RAG_SERVICE_TOKEN_REQUIRED');
@@ -45,7 +39,7 @@ try {
         reconciledAt = Date.now();
       }
       await processCloudQueue(pool,config);
-      await processMailQueue(pool,config);
+
       if(stopping)break;
       const deletion = await deletions.claim();
       if (deletion) { await processDeletion(deletion, deletions, pool, config, abort.signal); continue; }

@@ -1,3 +1,4 @@
+import { assertSchema } from './config/schema.js';
 import { dashboardRoutes } from './modules/admin/dashboard/routes.js';
 import express from 'express';
 import { learningRoutes } from './modules/learning/routes.js';
@@ -44,9 +45,7 @@ export function createApp(pool, config) {
   app.use('/api/v1/admin/documents',adminDocumentRoutes(pool,config));
   app.get('/api/v1/health/live', (req, res) => sendData(req, res, { status: 'ok' }));
   app.get('/api/v1/health/ready', async (req, res) => {
-    try { await pool.query('SELECT public_id FROM cloud_assets LIMIT 1'); await pool.query('SELECT id FROM mail_outbox LIMIT 1'); for (const table of ['learning_sets','learning_items','learning_citations','learning_attempts','learning_generation_requests']) await pool.query(`SELECT id FROM ${table} LIMIT 1`); await pool.query('SELECT attempt_id FROM learning_answers LIMIT 1'); await pool.query('SELECT 1'); await pool.query('SELECT id FROM auth_sessions LIMIT 1'); await pool.query('SELECT id FROM courses LIMIT 1'); await pool.query('SELECT id FROM documents LIMIT 1'); await pool.query('SELECT id FROM processing_jobs LIMIT 1'); await pool.query('SELECT id FROM chunks LIMIT 1'); await pool.query('SELECT course_id FROM course_indexes LIMIT 1'); await pool.query('SELECT id FROM conversations LIMIT 1'); await pool.query('SELECT id,answer_origin FROM qa_messages LIMIT 1'); await pool.query('SELECT id FROM citations LIMIT 1'); await pool.query('SELECT id FROM ask_usage LIMIT 1'); await pool.query('SELECT id FROM audit_logs LIMIT 1'); if (!(await pool.query('SELECT id FROM admin_status_guard WHERE id=1'))[0].length) throw new Error('ADMIN_STATUS_GUARD_MISSING'); }
-    catch { throw new AppError(503, 'DB_NOT_READY', 'Cơ sở dữ liệu chưa sẵn sàng.'); }
-    if (!(await pool.execute('SELECT name FROM schema_migrations WHERE name=?', ['015_answer_origin.sql']))[0].length) throw new AppError(503, 'DB_NOT_READY', 'Cần áp dụng migration015.');
+    try { await assertSchema(pool); } catch { throw new AppError(503,'DB_NOT_READY','Cơ sở dữ liệu19 bảng chưa sẵn sàng.'); }
     sendData(req, res, { status: 'ok' });
   });
   app.use((req, res, next) => next(new AppError(404, 'NOT_FOUND', 'Không tìm thấy trang hoặc tài nguyên.')));

@@ -1,27 +1,8 @@
-import { lazy, Suspense, useCallback, useState } from "react";
 import { Button } from "../../components/ui/Button.jsx";
 import { Sparkles, UserRound, Quote } from "lucide-react";
 import { AnswerContent } from "./AnswerContent.jsx";
-const FormulaImage = lazy(() => import("./FormulaImage.jsx").then(module => ({ default: module.FormulaImage })));
-function AssistantAnswer({ message, question, onCitation }) {
-    const [loaded, setLoaded] = useState({});
-    const [showExtracted, setShowExtracted] = useState(false);
-    const onImageReady = useCallback((key, ready) => {
-        setLoaded(previous => previous[key] === ready ? previous : { ...previous, [key]: ready });
-    }, []);
-    const showImages = message.citations.length > 0 && (/[=≈∝]/.test(message.content) || /công thức|số mol/i.test(question));
-    const previews = showImages ? message.citations.slice(0, 2) : [];
-    const formulaImageReady = previews.length > 0 && previews.length === message.citations.length && previews.every(citation =>
-        !citation.sourceDeleted && loaded[`${citation.documentId}:${citation.chunkId}`]);
-    return <>
-        {message.content.startsWith('Không dựa trên tài liệu\n') && <p className="hint" role="note">Không dựa trên tài liệu · không có trích dẫn PDF</p>}
-        <AnswerContent content={message.content} hasSources={message.citations.length > 0} formulaImageReady={formulaImageReady && !showExtracted}/>
-        {formulaImageReady && <Button aria-pressed={showExtracted} onClick={() => setShowExtracted(value => !value)}>{showExtracted ? 'Ẩn công thức trích xuất' : 'Hiện công thức trích xuất để đối chiếu'}</Button>}
-        {showImages && <Suspense fallback={<p className="hint">Đang tải ảnh công thức; nội dung trích xuất vẫn được giữ ở trên.</p>}>
-            {previews.map(citation => <FormulaImage key={`${citation.documentId}:${citation.chunkId}`} citation={citation}
-                question={question || message.content} onOpen={onCitation} onImageReady={onImageReady}/>)}
-        </Suspense>}
-    </>;
+function AssistantAnswer({ message, onCitation }) {
+  return <AnswerContent content={message.content} blocks={message.blocks} citations={message.citations} onCitation={onCitation}/>;
 }
 export function MessageList({
     messages,
@@ -37,7 +18,7 @@ export function MessageList({
             aria-label="Hội thoại với trợ lý"
             tabIndex={0}
         >
-            {messages.map((message, messageIndex) => (
+            {messages.map((message) => (
                 <article key={message.id} className={`chat-message ${message.role}`}>
                     <div className="message-author">
                         {message.role === "user" ? (
@@ -54,7 +35,6 @@ export function MessageList({
                     </div>
                     {message.role === "assistant" ? (
                         <AssistantAnswer key={`${message.id}:${message.content}`} message={message}
-                            question={messages.slice(0, messageIndex).findLast(item => item.role === "user")?.content || ""}
                             onCitation={onCitation}/>
                     ) : (
                         <p className="chat-text">{message.content}</p>

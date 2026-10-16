@@ -61,7 +61,7 @@ export async function processDeletion(
         ) === 1;
     }
     const [rows] = await db.execute(
-      "SELECT DISTINCT ch.vector_key FROM chunks ch JOIN documents d ON d.id=ch.document_id WHERE d.user_id=? AND d.course_id=? AND d.status='ready' AND d.deleted_at IS NULL AND ch.vector_key IS NOT NULL",
+      "SELECT DISTINCT ch.khoa_vector FROM doan_tai_lieu ch JOIN tai_lieu d ON d.ma=ch.ma_tai_lieu WHERE d.ma_nguoi_dung=? AND d.ma_mon_hoc=? AND d.trang_thai='ready' AND d.luc_xoa IS NULL AND ch.khoa_vector IS NOT NULL",
       [owner, course],
     );
     const built = rows.length
@@ -97,7 +97,7 @@ export async function processDeletion(
         await remove(join(extracted, name));
     }
     abort.signal.throwIfAborted();
-    await db.execute('DELETE FROM document_extractions WHERE document_id=?',[document.id]);
+    await db.execute("DELETE FROM van_ban_pdf WHERE ma_tai_lieu=?",[document.id]);
     await repository.complete(job, document, db);
     log("worker", "document-deleted", { documentId: String(document.id) });
   } catch (error) {

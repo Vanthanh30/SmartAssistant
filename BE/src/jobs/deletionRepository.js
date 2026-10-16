@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 export function deletionRepository(pool, config) {
   const fence = async (db, job) => {
     const [rows] = await db.execute(
-      "SELECT id FROM processing_jobs WHERE id=? AND status='running' AND locked_by=? AND locked_until>UTC_TIMESTAMP(3) FOR UPDATE",
+      "SELECT ma FROM tac_vu_pdf WHERE ma=? AND trang_thai='running' AND ma_tien_trinh_khoa=? AND khoa_den_luc>UTC_TIMESTAMP(3) FOR UPDATE",
       [job.id, job.locked_by],
     );
     if (!rows.length) throw new Error("DELETE_LEASE_LOST");
@@ -34,7 +34,7 @@ export function deletionRepository(pool, config) {
       try {
         await db.beginTransaction();
         const [rows] = await db.query(
-          "SELECT * FROM processing_jobs WHERE type='delete_pdf' AND ((status='queued' AND next_run_at<=UTC_TIMESTAMP(3)) OR (status='running' AND locked_until<=UTC_TIMESTAMP(3))) ORDER BY next_run_at,id LIMIT 1 FOR UPDATE SKIP LOCKED",
+          "SELECT * FROM tac_vu_pdf WHERE loai_tac_vu='delete_pdf' AND ((trang_thai='queued' AND luc_chay_tiep<=UTC_TIMESTAMP(3)) OR (trang_thai='running' AND khoa_den_luc<=UTC_TIMESTAMP(3))) ORDER BY luc_chay_tiep,ma LIMIT 1 FOR UPDATE SKIP LOCKED",
         );
         if (!rows.length) {
           await db.commit();
@@ -42,13 +42,13 @@ export function deletionRepository(pool, config) {
         }
         const job = rows[0];
         const document = (
-          await db.execute("SELECT * FROM documents WHERE id=? FOR UPDATE", [
+          await db.execute("SELECT * FROM tai_lieu WHERE ma=? FOR UPDATE", [
             job.document_id,
           ])
         )[0][0];
         if (document.status !== "deleting") {
           await db.execute(
-            "UPDATE processing_jobs SET status='completed',locked_by=NULL,locked_until=NULL WHERE id=?",
+            "UPDATE tac_vu_pdf SET trang_thai='completed',ma_tien_trinh_khoa=NULL,khoa_den_luc=NULL WHERE ma=?",
             [job.id],
           );
           await db.commit();
@@ -56,11 +56,11 @@ export function deletionRepository(pool, config) {
         }
         if (job.attempts >= config.JOB_MAX_ATTEMPTS) {
           await db.execute(
-            "UPDATE processing_jobs SET status='failed',last_error='DELETE_ATTEMPTS_EXHAUSTED',locked_by=NULL,locked_until=NULL WHERE id=?",
+            "UPDATE tac_vu_pdf SET trang_thai='failed',loi_gan_nhat='DELETE_ATTEMPTS_EXHAUSTED',ma_tien_trinh_khoa=NULL,khoa_den_luc=NULL WHERE ma=?",
             [job.id],
           );
           await db.execute(
-            "UPDATE documents SET error_code='DELETE_ATTEMPTS_EXHAUSTED',error_message='Chưa xóa xong tài liệu. Chọn Thử xóa lại để tiếp tục.' WHERE id=?",
+            "UPDATE tai_lieu SET ma_loi='DELETE_ATTEMPTS_EXHAUSTED',thong_bao_loi='Chưa xóa xong tài liệu. Chọn Thử xóa lại để tiếp tục.' WHERE ma=?",
             [document.id],
           );
           await db.commit();
@@ -69,7 +69,7 @@ export function deletionRepository(pool, config) {
         job.locked_by = randomUUID();
         job.attempts++;
         await db.execute(
-          "UPDATE processing_jobs SET status='running',attempts=?,locked_by=?,locked_until=TIMESTAMPADD(SECOND,?,UTC_TIMESTAMP(3)) WHERE id=?",
+          "UPDATE tac_vu_pdf SET trang_thai='running',so_lan_thu=?,ma_tien_trinh_khoa=?,khoa_den_luc=TIMESTAMPADD(SECOND,?,UTC_TIMESTAMP(3)) WHERE ma=?",
           [job.attempts, job.locked_by, config.JOB_LEASE_SECONDS, job.id],
         );
         await db.commit();
@@ -84,7 +84,7 @@ export function deletionRepository(pool, config) {
     renew: async (job) =>
       (
         await pool.execute(
-          "UPDATE processing_jobs SET locked_until=TIMESTAMPADD(SECOND,?,UTC_TIMESTAMP(3)) WHERE id=? AND status='running' AND locked_by=? AND locked_until>UTC_TIMESTAMP(3)",
+          "UPDATE tac_vu_pdf SET khoa_den_luc=TIMESTAMPADD(SECOND,?,UTC_TIMESTAMP(3)) WHERE ma=? AND trang_thai='running' AND ma_tien_trinh_khoa=? AND khoa_den_luc>UTC_TIMESTAMP(3)",
           [config.JOB_LEASE_SECONDS, job.id, job.locked_by],
         )
       )[0].affectedRows === 1,
@@ -95,8 +95,8 @@ export function deletionRepository(pool, config) {
           await courseFence(connection, document);
           if (built)
             await connection.execute(
-              `INSERT INTO course_indexes(course_id,user_id,version,model,model_revision,dimension,metric,manifest_key) VALUES (?,?,?,?,?,?,?,?)
-          ON DUPLICATE KEY UPDATE version=VALUES(version),model=VALUES(model),model_revision=VALUES(model_revision),dimension=VALUES(dimension),metric=VALUES(metric),manifest_key=VALUES(manifest_key)`,
+              `INSERT INTO chi_muc_tim_kiem(ma_mon_hoc,ma_nguoi_dung,phien_ban,mo_hinh,phien_ban_mo_hinh,so_chieu,phep_do,khoa_manifest) VALUES (?,?,?,?,?,?,?,?)
+          ON DUPLICATE KEY UPDATE phien_ban=VALUES(phien_ban),mo_hinh=VALUES(mo_hinh),phien_ban_mo_hinh=VALUES(phien_ban_mo_hinh),so_chieu=VALUES(so_chieu),phep_do=VALUES(phep_do),khoa_manifest=VALUES(khoa_manifest)`,
               [
                 document.course_id,
                 document.user_id,
@@ -110,7 +110,7 @@ export function deletionRepository(pool, config) {
             );
           else
             await connection.execute(
-              "DELETE FROM course_indexes WHERE course_id=? AND user_id=?",
+              "DELETE FROM chi_muc_tim_kiem WHERE ma_mon_hoc=? AND ma_nguoi_dung=?",
               [document.course_id, document.user_id],
             );
         },
@@ -123,15 +123,15 @@ export function deletionRepository(pool, config) {
         async (connection) => {
           await courseFence(connection, document);
           // F07 adds nullable citation FKs/snapshots; never cascade-delete history here.
-          await connection.execute("DELETE FROM chunks WHERE document_id=?", [
+          await connection.execute("DELETE FROM doan_tai_lieu WHERE ma_tai_lieu=?", [
             document.id,
           ]);
           await connection.execute(
-            "UPDATE documents SET status='deleted',deleted_at=UTC_TIMESTAMP(3),error_code=NULL,error_message=NULL WHERE id=? AND status='deleting'",
+            "UPDATE tai_lieu SET trang_thai='deleted',luc_xoa=UTC_TIMESTAMP(3),ma_loi=NULL,thong_bao_loi=NULL WHERE ma=? AND trang_thai='deleting'",
             [document.id],
           );
           await connection.execute(
-            "UPDATE processing_jobs SET status='completed',locked_by=NULL,locked_until=NULL,last_error=NULL WHERE id=?",
+            "UPDATE tac_vu_pdf SET trang_thai='completed',ma_tien_trinh_khoa=NULL,khoa_den_luc=NULL,loi_gan_nhat=NULL WHERE ma=?",
             [job.id],
           );
         },
@@ -142,7 +142,7 @@ export function deletionRepository(pool, config) {
       await run(job, async (db) => {
         const retry = aborted || job.attempts < config.JOB_MAX_ATTEMPTS;
         await db.execute(
-          "UPDATE processing_jobs SET status=?,attempts=GREATEST(attempts-?,0),locked_by=NULL,locked_until=NULL,last_error=?,next_run_at=TIMESTAMPADD(SECOND,?,UTC_TIMESTAMP(3)) WHERE id=?",
+          "UPDATE tac_vu_pdf SET trang_thai=?,so_lan_thu=GREATEST(so_lan_thu-?,0),ma_tien_trinh_khoa=NULL,khoa_den_luc=NULL,loi_gan_nhat=?,luc_chay_tiep=TIMESTAMPADD(SECOND,?,UTC_TIMESTAMP(3)) WHERE ma=?",
           [
             retry ? "queued" : "failed",
             aborted ? 1 : 0,
@@ -152,7 +152,7 @@ export function deletionRepository(pool, config) {
           ],
         );
         await db.execute(
-          "UPDATE documents SET error_code=?,error_message=? WHERE id=? AND status='deleting'",
+          "UPDATE tai_lieu SET ma_loi=?,thong_bao_loi=? WHERE ma=? AND trang_thai='deleting'",
           [
             aborted ? null : "DELETE_CLEANUP_FAILED",
             aborted

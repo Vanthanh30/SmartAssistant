@@ -49,7 +49,7 @@ export function StudyContent({setId, embedded = false}) {
             const ResultIcon=answer?.correct?CheckCircle2:skipped?MinusCircle:XCircle;
             const locked=completed||submit.isPending||submissionLocked;
             return <fieldset className={`study-question${completed ? ` study-question--${result}` : ''}`} key={item.id}>
-              <legend>{i+1}. {item.prompt}</legend>
+              <legend>{i+1}. {item.prompt.replace(/^Theo tài liệu,\s*/u, '')}</legend>
               {item.choices.map((choice,j)=>{
                 const selected=(completed?answer?.choice:answers[item.id])===j;
                 const correct=completed&&item.correctIndex===j;

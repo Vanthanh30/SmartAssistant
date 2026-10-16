@@ -21,7 +21,7 @@ export async function processSource(claim, repository, pool, config, signal) {
     }
     let extraction;
     if(document.extraction_key==='db'){
-      const [artifacts]=await lockDb.execute('SELECT payload FROM document_extractions WHERE document_id=?',[document.id]);
+      const [artifacts]=await lockDb.execute("SELECT du_lieu_trich_xuat FROM van_ban_pdf WHERE ma_tai_lieu=?",[document.id]);
       if(!artifacts.length)throw new Error('EXTRACTION_MISSING');
       extraction=JSON.parse(artifacts[0].payload);
     }else{
@@ -36,7 +36,7 @@ export async function processSource(claim, repository, pool, config, signal) {
     if (JSON.stringify(embedded.contract) !== JSON.stringify(prepared.contract)) throw new Error('EMBEDDING_CONTRACT_CHANGED');
     await repository.vectors(job, embedded.vectorKey); await repository.stage(job, 'indexing');
     // Session advisory lock spans index I/O without a long SQL transaction.
-    const [rows] = await lockDb.execute("SELECT DISTINCT ch.vector_key FROM chunks ch JOIN documents d ON d.id=ch.document_id WHERE d.user_id=? AND d.course_id=? AND d.deleted_at IS NULL AND (d.status='ready' OR d.id=?) AND ch.vector_key IS NOT NULL", [owner, course, document.id]);
+    const [rows] = await lockDb.execute("SELECT DISTINCT ch.khoa_vector FROM doan_tai_lieu ch JOIN tai_lieu d ON d.ma=ch.ma_tai_lieu WHERE d.ma_nguoi_dung=? AND d.ma_mon_hoc=? AND d.luc_xoa IS NULL AND (d.trang_thai='ready' OR d.ma=?) AND ch.khoa_vector IS NOT NULL", [owner, course, document.id]);
     const built = await call('/indexes/build', { owner, course, keys: rows.map(row => row.vector_key) }, abort.signal);
     abort.signal.throwIfAborted(); await repository.publish(job, document, built, lockDb);
     log('worker', 'source-ready', { documentId: String(document.id), version: built.version });

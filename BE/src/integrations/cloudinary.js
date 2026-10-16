@@ -15,35 +15,6 @@ export function cloudPublicId(config, key, kind) {
     .slice(0, 20);
   return `study_assistant/${scope}/${kind}/${kind === "avatars" ? key.replace(/\.webp$/, "") : key}`;
 }
-export async function enqueueCloudAsset(
-  db,
-  config,
-  { key, owner, documentId = null, size, sha256 },
-) {
-  if (!cloudEnabled(config))
-    throw new AppError(
-      503,
-      "CLOUDINARY_NOT_CONFIGURED",
-      "Cần cấu hình Cloudinary để lưu tài liệu/ảnh.",
-    );
-  await db.execute(
-    "INSERT INTO cloud_assets(public_id,cloud_name,resource_type,storage_key,user_id,document_id,size_bytes,sha256) VALUES(?,?,?,?,?,?,?,?)",
-    [
-      cloudPublicId(config, key, documentId ? "documents" : "avatars"),
-      config.CLOUDINARY_CLOUD_NAME,
-      documentId ? "raw" : "image",
-      key,
-      owner,
-      documentId,
-      size,
-      sha256,
-    ],
-  );
-  await db.execute(
-    "UPDATE cloud_assets SET state='uploading',locked_until=TIMESTAMPADD(SECOND,120,UTC_TIMESTAMP(3)) WHERE public_id=?",
-    [cloudPublicId(config, key, documentId ? "documents" : "avatars")],
-  );
-}
 export async function uploadCloudAsset(config, asset, path) {
   if (
     !cloudEnabled(config) ||
@@ -124,8 +95,8 @@ export async function cloudBuffer(config, asset, signal) {
       ? 2 * 1024 ** 2
       : config.MAX_UPLOAD_MB * 1024 ** 2;
   if (
-    !Number.isSafeInteger(Number(asset.size_bytes)) ||
-    Number(asset.size_bytes) > maxBytes ||
+    (asset.resource_type !== 'image' && !Number.isSafeInteger(Number(asset.size_bytes))) ||
+    (asset.size_bytes != null && Number(asset.size_bytes) > maxBytes) ||
     activeDownloads >= 4
   )
     throw new AppError(
@@ -157,14 +128,14 @@ export async function cloudBuffer(config, asset, signal) {
     const hash = createHash("sha256");
     for await (const chunk of response.body) {
       size += chunk.length;
-      if (size > Number(asset.size_bytes) || size > maxBytes)
+      if ((asset.size_bytes != null && size > Number(asset.size_bytes)) || size > maxBytes)
         throw new Error("SIZE_MISMATCH");
       hash.update(chunk);
       parts.push(chunk);
     }
     if (
-      size !== Number(asset.size_bytes) ||
-      hash.digest("hex") !== asset.sha256
+      (asset.size_bytes != null && size !== Number(asset.size_bytes)) ||
+      (asset.sha256 && hash.digest("hex") !== asset.sha256)
     )
       throw new Error("INTEGRITY_FAILED");
     return Buffer.concat(parts, size);

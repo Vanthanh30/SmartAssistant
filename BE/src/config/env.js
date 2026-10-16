@@ -35,11 +35,6 @@ export function loadConfig(env = process.env) {
     ORPHAN_GRACE_SECONDS: z.coerce.number().int().min(3600).max(2592000).default(86400),
     CLOUDINARY_CLOUD_NAME: z.string().trim().regex(/^[a-zA-Z0-9_-]*$/).max(100).default(''),
     CLOUDINARY_API_KEY: z.string().trim().default(''), CLOUDINARY_API_SECRET: z.string().trim().default(''),
-    SMTP_HOST: z.string().trim().max(255).default(''),
-    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
-    SMTP_SECURE: z.preprocess(v => v === undefined ? false : v === true || v === 'true' || v === '1' ? true : v === false || v === 'false' || v === '0' ? false : v, z.boolean()),
-    SMTP_USER: z.string().trim().default(''), SMTP_PASSWORD: z.string().default(''),
-    EMAIL_FROM: z.string().trim().max(320).refine(v => !/[\r\n]/.test(v)).default(''),
     LLM_PROVIDER: z.enum(['openai']).default('openai'),
     LLM_MODEL: z.string().trim().max(200).default(''), OPENAI_API_KEY: z.string().trim().default(''),
     LLM_TEMPERATURE: z.preprocess(v => v === '' ? undefined : v, z.coerce.number().min(0).max(2).optional()),
@@ -58,7 +53,7 @@ export function loadConfig(env = process.env) {
   if (!result.success) throw new Error(`Cấu hình env không hợp lệ: ${result.error.issues.map(i => i.path.join('.')).join(', ')}`);
   const config = result.data;
   if ([config.CLOUDINARY_CLOUD_NAME,config.CLOUDINARY_API_KEY,config.CLOUDINARY_API_SECRET].some(Boolean) && ![config.CLOUDINARY_CLOUD_NAME,config.CLOUDINARY_API_KEY,config.CLOUDINARY_API_SECRET].every(Boolean)) throw new Error('Cần đủ3 biến CLOUDINARY để bật lưu cloud.');
-  if ([config.SMTP_HOST,config.SMTP_USER,config.SMTP_PASSWORD,config.EMAIL_FROM].some(Boolean) && ![config.SMTP_HOST,config.SMTP_USER,config.SMTP_PASSWORD,config.EMAIL_FROM].every(Boolean)) throw new Error('Cần SMTP_HOST/USER/PASSWORD và EMAIL_FROM để bật email.');
+
   const ragUrl = new URL(config.RAG_SERVICE_URL);
   if (ragUrl.protocol !== 'http:' || ragUrl.hostname !== '127.0.0.1' || ragUrl.username || ragUrl.password || ragUrl.pathname !== '/' || ragUrl.search || ragUrl.hash) throw new Error('RAG_SERVICE_URL phải là HTTP loopback 127.0.0.1 không có path');
   config.AVATAR_DIR = resolve(fileURLToPath(new URL('../../', import.meta.url)), config.AVATAR_DIR);

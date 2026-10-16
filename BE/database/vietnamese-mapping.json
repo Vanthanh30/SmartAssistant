@@ -1,0 +1,227 @@
+{
+  "tables": {
+    "users": "nguoi_dung",
+    "auth_sessions": "phien_dang_nhap",
+    "courses": "mon_hoc",
+    "documents": "tai_lieu",
+    "document_extractions": "van_ban_pdf",
+    "chunks": "doan_tai_lieu",
+    "course_indexes": "chi_muc_tim_kiem",
+    "processing_jobs": "tac_vu_pdf",
+    "conversations": "hoi_thoai",
+    "qa_messages": "tin_nhan",
+    "citations": "nguon_tra_loi",
+    "ask_usage": "luot_hoi_dap",
+    "learning_sets": "bo_hoc_tap",
+    "learning_items": "muc_hoc_tap",
+    "learning_citations": "nguon_hoc_tap",
+    "learning_generation_requests": "yeu_cau_tao_bo",
+    "learning_attempts": "lan_lam_bai",
+    "learning_answers": "dap_an_da_chon",
+    "audit_logs": "nhat_ky_quan_tri"
+  },
+  "columns": {
+    "nguoi_dung": {
+      "id": "ma",
+      "full_name": "ho_ten",
+      "email": "email",
+      "password_hash": "mat_khau_bam",
+      "avatar_key": "khoa_anh_dai_dien",
+      "role": "vai_tro",
+      "status": "trang_thai",
+      "created_at": "ngay_tao",
+      "updated_at": "ngay_cap_nhat"
+    },
+    "phien_dang_nhap": {
+      "id": "ma",
+      "user_id": "ma_nguoi_dung",
+      "token_hash": "ma_bam_token",
+      "csrf_token": "token_chong_csrf",
+      "expires_at": "luc_het_han",
+      "revoked_at": "luc_thu_hoi",
+      "created_at": "ngay_tao"
+    },
+    "mon_hoc": {
+      "id": "ma",
+      "user_id": "ma_nguoi_dung",
+      "name": "ten",
+      "description": "mo_ta",
+      "created_at": "ngay_tao",
+      "updated_at": "ngay_cap_nhat"
+    },
+    "tai_lieu": {
+      "cloud_public_id": "ma_tep_dam_may",
+      "cloud_resource_type": "loai_tep_dam_may",
+      "id": "ma",
+      "course_id": "ma_mon_hoc",
+      "user_id": "ma_nguoi_dung",
+      "original_name": "ten_tep_goc",
+      "storage_key": "khoa_luu_tru",
+      "mime_type": "kieu_tep",
+      "size_bytes": "kich_thuoc_byte",
+      "sha256": "ma_bam_sha256",
+      "page_count": "so_trang",
+      "status": "trang_thai",
+      "extraction_completed_at": "luc_trich_xuat_xong",
+      "extraction_key": "khoa_trich_xuat",
+      "error_code": "ma_loi",
+      "error_message": "thong_bao_loi",
+      "deleted_at": "luc_xoa",
+      "created_at": "ngay_tao",
+      "updated_at": "ngay_cap_nhat"
+    },
+    "van_ban_pdf": {
+      "document_id": "ma_tai_lieu",
+      "payload": "du_lieu_trich_xuat"
+    },
+    "doan_tai_lieu": {
+      "id": "ma",
+      "document_id": "ma_tai_lieu",
+      "chunk_order": "thu_tu_doan",
+      "content": "noi_dung",
+      "page_from": "tu_trang",
+      "page_to": "den_trang",
+      "token_count": "so_token",
+      "source_start": "vi_tri_dau",
+      "source_end": "vi_tri_cuoi",
+      "page_map": "anh_xa_trang",
+      "embedding_model": "mo_hinh_embedding",
+      "embedding_revision": "phien_ban_embedding",
+      "vector_key": "khoa_vector"
+    },
+    "chi_muc_tim_kiem": {
+      "course_id": "ma_mon_hoc",
+      "user_id": "ma_nguoi_dung",
+      "version": "phien_ban",
+      "model": "mo_hinh",
+      "model_revision": "phien_ban_mo_hinh",
+      "dimension": "so_chieu",
+      "metric": "phep_do",
+      "manifest_key": "khoa_manifest",
+      "updated_at": "ngay_cap_nhat"
+    },
+    "tac_vu_pdf": {
+      "id": "ma",
+      "document_id": "ma_tai_lieu",
+      "type": "loai_tac_vu",
+      "status": "trang_thai",
+      "attempts": "so_lan_thu",
+      "locked_by": "ma_tien_trinh_khoa",
+      "locked_until": "khoa_den_luc",
+      "next_run_at": "luc_chay_tiep",
+      "last_error": "loi_gan_nhat",
+      "created_at": "ngay_tao",
+      "updated_at": "ngay_cap_nhat"
+    },
+    "hoi_thoai": {
+      "id": "ma",
+      "course_id": "ma_mon_hoc",
+      "user_id": "ma_nguoi_dung",
+      "title": "tieu_de",
+      "created_at": "ngay_tao",
+      "updated_at": "ngay_cap_nhat"
+    },
+    "tin_nhan": {
+      "id": "ma",
+      "conversation_id": "ma_hoi_thoai",
+      "request_id": "ma_yeu_cau",
+      "payload_hash": "ma_bam_dau_vao",
+      "role": "vai_tro",
+      "content": "noi_dung",
+      "status": "trang_thai",
+      "error_code": "ma_loi",
+      "error_status": "ma_trang_thai_loi",
+      "model": "mo_hinh",
+      "latency_ms": "do_tre_ms",
+      "created_at": "ngay_tao",
+      "answer_origin": "nguon_tra_loi",
+      "answer_blocks": "cac_khoi_tra_loi"
+    },
+    "nguon_tra_loi": {
+      "id": "ma",
+      "message_id": "ma_tin_nhan",
+      "chunk_id": "ma_doan",
+      "document_id": "ma_tai_lieu",
+      "file_name": "ten_tep_nguon",
+      "page_from": "tu_trang",
+      "page_to": "den_trang",
+      "excerpt": "noi_dung_nguon_chup_lai",
+      "score": "diem"
+    },
+    "luot_hoi_dap": {
+      "id": "ma",
+      "user_id": "ma_nguoi_dung",
+      "charged_at": "luc_tinh_luot",
+      "legacy_message_id": "ma_tin_nhan_cu"
+    },
+    "bo_hoc_tap": {
+      "id": "ma",
+      "course_id": "ma_mon_hoc",
+      "user_id": "ma_nguoi_dung",
+      "kind": "loai",
+      "title": "tieu_de",
+      "model": "mo_hinh",
+      "source_count": "so_nguon",
+      "created_at": "ngay_tao"
+    },
+    "muc_hoc_tap": {
+      "id": "ma",
+      "set_id": "ma_bo_hoc",
+      "position": "vi_tri",
+      "prompt": "cau_hoi_hoac_mat_truoc",
+      "answer": "dap_an_hoac_mat_sau",
+      "choices": "cac_lua_chon",
+      "correct_index": "vi_tri_dap_an_dung",
+      "explanation": "giai_thich"
+    },
+    "nguon_hoc_tap": {
+      "id": "ma",
+      "item_id": "ma_noi_dung",
+      "chunk_id": "ma_doan",
+      "document_id": "ma_tai_lieu",
+      "file_name": "ten_tep_nguon",
+      "page_from": "tu_trang",
+      "page_to": "den_trang",
+      "excerpt": "noi_dung_nguon_chup_lai"
+    },
+    "yeu_cau_tao_bo": {
+      "id": "ma",
+      "user_id": "ma_nguoi_dung",
+      "course_id": "ma_mon_hoc",
+      "request_id": "ma_yeu_cau",
+      "payload_hash": "ma_bam_dau_vao",
+      "state": "tinh_trang",
+      "set_id": "ma_bo_hoc",
+      "error_code": "ma_loi",
+      "error_status": "ma_trang_thai_loi",
+      "created_at": "ngay_tao"
+    },
+    "lan_lam_bai": {
+      "id": "ma",
+      "set_id": "ma_bo_hoc",
+      "user_id": "ma_nguoi_dung",
+      "request_id": "ma_yeu_cau",
+      "score": "diem",
+      "correct_count": "so_cau_dung",
+      "total_questions": "tong_so_cau",
+      "submission_hash": "ma_bam_bai_nop",
+      "started_at": "luc_bat_dau",
+      "completed_at": "luc_hoan_thanh"
+    },
+    "dap_an_da_chon": {
+      "attempt_id": "ma_lan_lam",
+      "item_id": "ma_noi_dung",
+      "choice": "lua_chon",
+      "is_correct": "dung_sai"
+    },
+    "nhat_ky_quan_tri": {
+      "id": "ma",
+      "actor_id": "ma_nguoi_thuc_hien",
+      "action": "hanh_dong",
+      "entity_type": "loai_doi_tuong",
+      "entity_id": "ma_doi_tuong",
+      "metadata_json": "du_lieu_bo_sung",
+      "created_at": "ngay_tao"
+    }
+  }
+}

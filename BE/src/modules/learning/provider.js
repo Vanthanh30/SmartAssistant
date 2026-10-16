@@ -1,12 +1,13 @@
 ﻿import { createHash } from 'node:crypto';
+import { questionVariants, relation } from './questionRules.js';
 import { AppError } from '../../shared/AppError.js';
-import { cleanDocumentText } from '../conversations/documentAnswer.js';
+import { learningText, readableProse, separateHeadings } from './sourceText.js';
+import { formulaFacts, formulaVariants } from './formulaQuestions.js';
 const key = value => value.normalize('NFC').toLocaleLowerCase('vi').replace(/\s+/g, ' ').trim();
-const stop = new Set('những các một được trong trên dưới này đó và hay của với cho khi thì nhưng hoặc rằng không cũng đang đã sẽ lại từ đến như là có bằng'.split(' '));
-const MAX_TEXT_PER_DOCUMENT = 32000;
+const MAX_TEXT_PER_DOCUMENT = 128000;
 const MAX_FACTS_PER_DOCUMENT = 128;
 const MAX_FACTS_PER_SAMPLE = 4;
-// Exact-quotation cloze items do not assert invented scientific facts.
+// Bounded source facts feed explicit-relation and full-statement questions.
 export function extractFacts(sources) {
   const facts = []; const seen = new Set();
   const budgets = new Map();
@@ -15,10 +16,12 @@ export function extractFacts(sources) {
     budgets.set(source.documentId, usage);
     const remaining = MAX_TEXT_PER_DOCUMENT - usage.text;
     if (remaining <= 0 || usage.facts >= MAX_FACTS_PER_DOCUMENT) continue;
-    const bounded = (source.content || '').slice(0, Math.min(remaining, 1000));
+    const raw = source.content || '';
+    const limit = Math.min(remaining, 4000);
+    const bounded = raw.length > limit ? raw.slice(0, Math.max(0, raw.lastIndexOf('\n', limit))) : raw;
     usage.text += bounded.length;
     let sampleFacts = 0;
-    const text = cleanDocumentText(bounded).split('\n').filter(line => {
+    const text = separateHeadings(learningText(bounded)).split('\n').filter(line => {
       const letters = line.match(/\p{L}/gu) || [];
       const capitals = line.match(/\p{Lu}/gu) || [];
       return !/^(?:BÀI|CHƯƠNG|CHỦ ĐỀ|TỔNG HỢP|TỔNG HỢ P)\b/u.test(line)
@@ -27,19 +30,14 @@ export function extractFacts(sources) {
     for (const block of text.split(/\n\n+/)) {
       const prose = block.replace(/\n/g, ' ').replace(/\s+/g, ' ');
       for (const part of prose.split(/(?<=[.!?;])\s+|[•●▪◦]|\s\*\s/u)) {
-        const sentence = part.replace(/^(?:[*•●▪◦-]\s*|\d+[.)]\s*|[a-z][.)]\s*)/, '').trim();
-        if (sentence.length < 40 || sentence.length > 500 || /[=≈∝]|https?:\/\/|www\./i.test(sentence)) continue;
-        if (!/[.!?]$/.test(sentence)) continue;
+        const sentence = part.replace(/^(?:[*•●▪◦+−-]\s*|\(?\d+[.)]\s*|[a-z][.)]\s*)/, '').trim();
+        if (sentence.length < 25 || sentence.length > 500 || /[=≈∝]|https?:\/\/|www\./i.test(sentence)) continue;
+        if (!/[.!?]$/.test(sentence) || !readableProse(sentence)) continue;
         if ((sentence.match(/\p{L}/gu) || []).length / sentence.length < .65) continue;
         const identity = key(sentence);
         if (seen.has(identity)) continue;
-        const words = [...sentence.matchAll(/(?<![\p{L}\p{N}])[\p{L}][\p{L}\p{N}-]{2,24}(?![\p{L}\p{N}])/gu)]
-          .filter(match => !stop.has(key(match[0])) && match.index > 0);
-        words.sort((a,b) => b[0].length-a[0].length || a.index-b.index);
-        const target = words.find(word => sentence.split(word[0]).length === 2);
-        if (!target) continue;
         seen.add(identity);
-        facts.push({ sentence, target: target[0], offset: target.index, source });
+        facts.push({ sentence, source });
         usage.facts++;
         sampleFacts++;
         if (usage.facts >= MAX_FACTS_PER_DOCUMENT || sampleFacts >= MAX_FACTS_PER_SAMPLE) break;
@@ -51,14 +49,15 @@ export function extractFacts(sources) {
 }
 export function learningProvider() {
   return async (input, sources, verify) => {
-    const facts = extractFacts(sources); const items = [];
+    const facts = [...extractFacts(sources), ...formulaFacts(sources)]; const items = [];
     const seed = createHash('sha256').update(input.requestId || input.title || '').digest();
-    const targets = new Map();
+    const pools = new Map();
+    const variantUsage = new Map();
     const sections = new Map();
     for (const fact of facts) {
       const documentId = fact.source.documentId;
-      if (!targets.has(documentId)) targets.set(documentId, new Map());
-      targets.get(documentId).set(key(fact.target), fact.target);
+      if (!pools.has(documentId)) pools.set(documentId, []);
+      pools.get(documentId).push(fact);
       if (!sections.has(documentId)) sections.set(documentId, new Map());
       const part = `${fact.source.sectionBin}:${fact.source.pageFrom}`;
       if (!sections.get(documentId).has(part)) sections.get(documentId).set(part, []);
@@ -82,23 +81,42 @@ export function learningProvider() {
       }
       if (!added) break;
     }
-    for (const fact of ordered) {
-      const { sentence, target, offset, source } = fact;
-      const quote = sentence.slice(0,offset) + '____' + sentence.slice(offset+target.length);
-      const prompt = `Điền từ còn thiếu theo nguyên văn tài liệu: “${quote}”`;
+    // Interleave verified formula facts instead of leaving all math at the end.
+    const prose = ordered.filter(fact => !fact.formula);
+    const math = ordered.filter(fact => fact.formula).sort((a,b) => {
+      const product = value => /^[A-Za-z]\s*=\s*[A-Za-zλρν]\s*[.·×*]\s*[A-Za-zλρν]$/u.test(value);
+      return Number(product(b.formula)) - Number(product(a.formula));
+    });
+    const candidates = [];
+    let proseIndex = 0; let mathIndex = 0;
+    while (proseIndex < prose.length || mathIndex < math.length) {
+      if (mathIndex < math.length && (candidates.length % 4 === 2 || proseIndex >= prose.length)) candidates.push(math[mathIndex++]);
+      else if (proseIndex < prose.length) candidates.push(prose[proseIndex++]);
+      else break;
+    }
+    for (const fact of candidates) {
+      const { sentence, source } = fact;
       if (input.kind === 'flashcards') {
-        items.push({ prompt, answer: `${target}\n\n${sentence}`, citedChunkIds: [String(source.chunkId)] });
+        const explicit = relation(sentence);
+        const condition = sentence.match(/^Khi (.{12,160}?) thì (.{12,250})[.!]$/u);
+        if ((!explicit && !condition && !fact.formula) || (fact.formula && !fact.topic)) continue;
+        items.push({ prompt: fact.formula ? `Nêu biểu thức được dùng trong phần “${fact.topic}”.`
+          : condition ? `Điều gì xảy ra khi ${condition[1]}?`
+          : explicit.verb.endsWith('là') ? `${explicit.subject} ${explicit.verb} gì?`
+          : explicit.verb === 'có' ? `${explicit.subject} có đặc điểm nào?` : `${explicit.subject} có vai trò hoặc công dụng gì?`,
+        answer: fact.formula || (condition ? condition[2] : explicit.detail), evidenceText: sentence, citedChunkIds: [String(source.chunkId)] });
       } else {
-        const distractors = [];
-        const sentenceKey = key(sentence); const targetKey = key(target);
-        for (const [identity,value] of targets.get(source.documentId)) {
-          if (identity !== targetKey && !sentenceKey.includes(identity)) distractors.push(value);
-          if (distractors.length === 3) break;
-        }
-        if (distractors.length !== 3) continue;
-        const choices = [...distractors]; const correctIndex = seed[items.length % seed.length] % 4;
-        choices.splice(correctIndex,0,target);
-        items.push({ prompt, choices, correctIndex, explanation: `Nguyên văn tài liệu: ${sentence}`, citedChunkIds: [String(source.chunkId)] });
+        const pool = pools.get(source.documentId);
+        const variants = fact.formula ? formulaVariants(fact, pool, seed[items.length % seed.length]) : questionVariants(fact, pool);
+        variants.sort((a,b) => (variantUsage.get(a.type) || 0) - (variantUsage.get(b.type) || 0));
+        const variant = variants[0];
+        if (!variant) continue;
+        const choices = [...variant.distractors];
+        const correctIndex = seed[items.length % seed.length] % 4;
+        choices.splice(correctIndex, 0, variant.answer);
+        items.push({ prompt: variant.prompt, choices, correctIndex,
+          explanation: variant.explanation || `Nội dung nguồn: ${sentence}`, evidenceText: sentence, citedChunkIds: [String(source.chunkId)] });
+        variantUsage.set(variant.type, (variantUsage.get(variant.type) || 0) + 1);
       }
       if (items.length === input.count) break;
     }
@@ -107,6 +125,6 @@ export function learningProvider() {
     const cited = new Set(items.flatMap(item => item.citedChunkIds));
     const retained = sources.filter(source => cited.has(String(source.chunkId)));
     await verify(retained);
-    return { items, sources: retained, model: 'document-rules-v2' };
+    return { items, sources: retained, model: 'document-rules-v4' };
   };
 }

@@ -66,7 +66,7 @@ try {
     start('api', process.execPath, ['src/server.js'], true);
     await Promise.all([workerReady, health(`http://127.0.0.1:${config.PORT}/api/v1/health/ready`),
       health(`http://127.0.0.1:${ragPort}/health/ready`, { 'X-Service-Token': process.env.RAG_SERVICE_TOKEN })]);
-    log('launcher', 'ready', { scope: 'runtime-and-pdf-extraction', indexingImplemented: false });
+    log('launcher', 'ready', { scope: 'runtime-and-source-pipeline', indexingImplemented: true });
     process.send?.({ type: 'ready' });
   }
 } catch (error) { log('launcher', 'startup-failed', { reason: error.message }); await shutdown(1); }

@@ -4,7 +4,7 @@ export function retrievalService(pool, config) {
   const call = ragClient(config);
   return async (owner, course, query, limit = 5, documentIds) => {
     const [indexes] = await pool.execute(
-      "SELECT i.* FROM course_indexes i JOIN courses c ON c.id=i.course_id AND c.user_id=i.user_id WHERE i.course_id=? AND i.user_id=?",
+      "SELECT i.* FROM chi_muc_tim_kiem i JOIN mon_hoc c ON c.ma=i.ma_mon_hoc AND c.ma_nguoi_dung=i.ma_nguoi_dung WHERE i.ma_mon_hoc=? AND i.ma_nguoi_dung=?",
       [course, owner],
     );
     if (!indexes.length) return [];
@@ -12,9 +12,9 @@ export function retrievalService(pool, config) {
     let allowedChunkIds;
     if (documentIds) {
       const [scope] = await pool.query(
-        `SELECT ch.id FROM chunks ch JOIN documents d ON d.id=ch.document_id
-         WHERE d.id IN (${documentIds.map(() => "?").join(",")}) AND d.user_id=? AND d.course_id=?
-         AND d.status='ready' AND d.deleted_at IS NULL LIMIT 50001`,
+        `SELECT ch.ma FROM doan_tai_lieu ch JOIN tai_lieu d ON d.ma=ch.ma_tai_lieu
+         WHERE d.ma IN (${documentIds.map(() => "?").join(",")}) AND d.ma_nguoi_dung=? AND d.ma_mon_hoc=?
+         AND d.trang_thai='ready' AND d.luc_xoa IS NULL LIMIT 50001`,
         [...documentIds, owner, course],
       );
       if (scope.length > 50000)
@@ -33,13 +33,13 @@ export function retrievalService(pool, config) {
       ...(allowedChunkIds ? { allowedChunkIds } : {}),
     });
     if (result.version !== index.version)
-      throw new Error("INDEX_VERSION_MISMATCH");
+      throw Object.assign(new Error("INDEX_VERSION_MISMATCH"), { code: "INDEX_VERSION_MISMATCH" });
     const ids = [
       ...new Set(result.candidates.map((candidate) => candidate.chunkId)),
     ];
     if (!ids.length) return [];
     const [rows] = await pool.execute(
-      `SELECT ch.*,d.original_name FROM chunks ch JOIN documents d ON d.id=ch.document_id WHERE ch.id IN (${ids.map(() => "?").join(",")}) AND d.user_id=? AND d.course_id=? AND d.status='ready' AND d.deleted_at IS NULL`,
+      `SELECT ch.*,d.ten_tep_goc FROM doan_tai_lieu ch JOIN tai_lieu d ON d.ma=ch.ma_tai_lieu WHERE ch.ma IN (${ids.map(() => "?").join(",")}) AND d.ma_nguoi_dung=? AND d.ma_mon_hoc=? AND d.trang_thai='ready' AND d.luc_xoa IS NULL`,
       [...ids, owner, course],
     );
     const metadata = new Map(rows.map((row) => [row.id, row]));
@@ -53,7 +53,7 @@ export function retrievalService(pool, config) {
         verified.push({
           chunkId: row.id,
           documentId: String(row.document_id),
-          content: row.content,
+          content: row.content, pageMap: row.page_map, sourceStart: row.source_start,
           pageFrom: row.page_from,
           pageTo: row.page_to,
           chunkOrder: row.chunk_order,

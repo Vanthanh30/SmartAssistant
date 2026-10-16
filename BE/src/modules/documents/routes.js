@@ -34,7 +34,7 @@ export function documentRoutes(pool, auth, config) {
     });
   documents.get('/:documentId', validate(documentIdSchema, 'params', 'ids'), controller.get);
   documents.get('/:documentId/chunks/:chunkId', validate(z.object({ documentId: courseIdSchema.shape.courseId, chunkId: z.string().regex(/^[a-f0-9]{64}$/) }), 'params', 'ids'), async (req,res) => {
-    const [rows] = await pool.execute("SELECT ch.* FROM chunks ch JOIN documents d ON d.id=ch.document_id WHERE ch.id=? AND d.id=? AND d.user_id=? AND d.status='ready' AND d.deleted_at IS NULL", [req.ids.chunkId, req.ids.documentId, req.auth.user.id]);
+    const [rows] = await pool.execute("SELECT ch.* FROM doan_tai_lieu ch JOIN tai_lieu d ON d.ma=ch.ma_tai_lieu WHERE ch.ma=? AND d.ma=? AND d.ma_nguoi_dung=? AND d.trang_thai='ready' AND d.luc_xoa IS NULL", [req.ids.chunkId, req.ids.documentId, req.auth.user.id]);
     if (!rows.length) throw new AppError(404,'SOURCE_NOT_FOUND','Nguồn không còn khả dụng.');
     const ch = rows[0]; sendData(req,res,{ chunkId: ch.id, documentId: String(ch.document_id), content: ch.content, pageFrom: ch.page_from, pageTo: ch.page_to });
   });

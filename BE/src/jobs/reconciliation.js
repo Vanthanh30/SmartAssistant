@@ -1,3 +1,4 @@
+import { reconcileCloudOrphans } from '../integrations/cloudOrphans.js';
 import { opendir, lstat, unlink, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ragClient } from '../rag/client.js';
@@ -20,35 +21,41 @@ export async function reconcileStorage(pool, config, signal, afterCourse = '0') 
     locked = Number((await db.execute('SELECT GET_LOCK(?,0) AS owned', [`rag-reconcile-${config.DB_NAME}`]))[0][0].owned) === 1;
     if (!locked) return null;
     // Repair missing durable work; never reset failed/exhausted jobs or completed source state.
-    await db.query("INSERT IGNORE INTO processing_jobs(document_id,type) SELECT id,'delete_pdf' FROM documents WHERE status='deleting'");
-    await db.query("UPDATE processing_jobs j JOIN documents d ON d.id=j.document_id SET j.status='queued',j.attempts=0,j.locked_by=NULL,j.locked_until=NULL,j.next_run_at=UTC_TIMESTAMP(3) WHERE j.type='delete_pdf' AND j.status='completed' AND d.status='deleting'");
-    await db.query("INSERT IGNORE INTO processing_jobs(document_id,type) SELECT id,'prepare_source' FROM documents WHERE extraction_completed_at IS NOT NULL AND deleted_at IS NULL AND status IN ('extracting','chunking','embedding','indexing')");
-    await db.query("INSERT IGNORE INTO processing_jobs(document_id,type) SELECT id,'extract_pdf' FROM documents WHERE extraction_completed_at IS NULL AND deleted_at IS NULL AND status IN ('queued','extracting')");
+    await db.query("INSERT IGNORE INTO tac_vu_pdf(ma_tai_lieu,loai_tac_vu) SELECT ma,'delete_pdf' FROM tai_lieu WHERE trang_thai='deleting'");
+    await db.query("UPDATE tac_vu_pdf j JOIN tai_lieu d ON d.ma=j.ma_tai_lieu SET j.trang_thai='queued',j.so_lan_thu=0,j.ma_tien_trinh_khoa=NULL,j.khoa_den_luc=NULL,j.luc_chay_tiep=UTC_TIMESTAMP(3) WHERE j.loai_tac_vu='delete_pdf' AND j.trang_thai='completed' AND d.trang_thai='deleting'");
+    await db.query("INSERT IGNORE INTO tac_vu_pdf(ma_tai_lieu,loai_tac_vu) SELECT ma,'prepare_source' FROM tai_lieu WHERE luc_trich_xuat_xong IS NOT NULL AND luc_xoa IS NULL AND trang_thai IN ('extracting','chunking','embedding','indexing')");
+    await db.query("INSERT IGNORE INTO tac_vu_pdf(ma_tai_lieu,loai_tac_vu) SELECT ma,'extract_pdf' FROM tai_lieu WHERE ma_tep_dam_may IS NOT NULL AND luc_trich_xuat_xong IS NULL AND luc_xoa IS NULL AND trang_thai IN ('queued','extracting')");
+    await db.query("INSERT IGNORE INTO tac_vu_pdf(ma_tai_lieu,loai_tac_vu) SELECT ma,'upload_pdf' FROM tai_lieu WHERE ma_tep_dam_may IS NULL AND luc_xoa IS NULL AND trang_thai='queued'");
+    await reconcileCloudOrphans(pool,config);
     const cutoff = Date.now() - config.ORPHAN_GRACE_SECONDS * 1000;
     if(localBound){
+    await files(join(config.UPLOAD_DIR,'pending'), async name => {
+      if(!/^[a-f0-9-]{36}\.pdf$/.test(name))return false;
+      return !(await db.execute("SELECT d.ma FROM tai_lieu d JOIN tac_vu_pdf j ON j.ma_tai_lieu=d.ma WHERE d.khoa_luu_tru=? AND j.loai_tac_vu='upload_pdf' AND j.trang_thai IN ('queued','running') AND d.luc_xoa IS NULL",[name]))[0].length;
+    },cutoff,signal);
     await files(config.UPLOAD_DIR, async name => {
       if (!/^[a-f0-9-]{36}\.pdf$/.test(name)) return false;
-      return !(await db.execute('SELECT id FROM documents WHERE storage_key=? AND deleted_at IS NULL', [name]))[0].length;
+      return !(await db.execute("SELECT ma FROM tai_lieu WHERE khoa_luu_tru=? AND luc_xoa IS NULL", [name]))[0].length;
     }, cutoff, signal);
     await files(join(config.UPLOAD_DIR, 'temp'), async name => /^[a-f0-9-]{36}\.part$/.test(name), cutoff, signal);
     await files(join(config.UPLOAD_DIR, 'extracted'), async name => {
       if (!/^[a-f0-9-]{36}\.pdf\.json(?:\.[a-f0-9-]{36})?$/.test(name)) return false;
-      const [references] = await db.execute('SELECT id FROM documents WHERE extraction_key=? AND deleted_at IS NULL', [name]);
+      const [references] = await db.execute("SELECT ma FROM tai_lieu WHERE khoa_trich_xuat=? AND luc_xoa IS NULL", [name]);
       if (references.length) return false;
-      const [busy] = await db.execute("SELECT j.id FROM processing_jobs j JOIN documents d ON d.id=j.document_id WHERE d.storage_key=? AND j.type='extract_pdf' AND j.status IN ('queued','running')", [name.slice(0, 40)]);
+      const [busy] = await db.execute("SELECT j.ma FROM tac_vu_pdf j JOIN tai_lieu d ON d.ma=j.ma_tai_lieu WHERE d.khoa_luu_tru=? AND j.loai_tac_vu='extract_pdf' AND j.trang_thai IN ('queued','running')", [name.slice(0, 40)]);
       return !busy.length;
     }, cutoff, signal);
     }
-    const [courses] = await db.execute('SELECT id,user_id FROM courses WHERE id>? ORDER BY id LIMIT 50', [afterCourse]);
+    const [courses] = await db.execute("SELECT ma,ma_nguoi_dung FROM mon_hoc WHERE ma>? ORDER BY ma LIMIT 50", [afterCourse]);
     for (const course of courses) {
       signal?.throwIfAborted(); last = String(course.id);
       const key = `rag-course-${course.id}`;
       const owns = Number((await db.execute('SELECT GET_LOCK(?,0) AS owned', [key]))[0][0].owned) === 1;
       if (!owns) continue;
       try {
-        const [indexes] = await db.execute('SELECT manifest_key FROM course_indexes WHERE course_id=? AND user_id=?', [course.id, course.user_id]);
-        const [vectors] = await db.execute('SELECT DISTINCT ch.vector_key FROM chunks ch JOIN documents d ON d.id=ch.document_id WHERE d.course_id=? AND d.user_id=? AND d.deleted_at IS NULL AND ch.vector_key IS NOT NULL', [course.id, course.user_id]);
-        const [busy] = await db.execute("SELECT DISTINCT d.id FROM documents d JOIN processing_jobs j ON j.document_id=d.id WHERE d.course_id=? AND d.user_id=? AND j.status IN ('queued','running')", [course.id, course.user_id]);
+        const [indexes] = await db.execute("SELECT khoa_manifest FROM chi_muc_tim_kiem WHERE ma_mon_hoc=? AND ma_nguoi_dung=?", [course.id, course.user_id]);
+        const [vectors] = await db.execute("SELECT DISTINCT ch.khoa_vector FROM doan_tai_lieu ch JOIN tai_lieu d ON d.ma=ch.ma_tai_lieu WHERE d.ma_mon_hoc=? AND d.ma_nguoi_dung=? AND d.luc_xoa IS NULL AND ch.khoa_vector IS NOT NULL", [course.id, course.user_id]);
+        const [busy] = await db.execute("SELECT DISTINCT d.ma FROM tai_lieu d JOIN tac_vu_pdf j ON j.ma_tai_lieu=d.ma WHERE d.ma_mon_hoc=? AND d.ma_nguoi_dung=? AND j.trang_thai IN ('queued','running')", [course.id, course.user_id]);
         const result = await call('/storage/reconcile', { owner: String(course.user_id), course: String(course.id), keepIndexKeys: indexes.map(row => row.manifest_key),
           keepVectorKeys: vectors.map(row => row.vector_key), busyDocuments: busy.map(row => String(row.id)), graceSeconds: config.ORPHAN_GRACE_SECONDS }, signal);
         if (result.missingReferences) log('worker', 'storage-reference-missing', { courseId: String(course.id), count: result.missingReferences });

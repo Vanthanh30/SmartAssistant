@@ -8,9 +8,9 @@ const input = registerSchema.parse({ fullName: process.env.ADMIN_FULL_NAME, emai
   password, confirmPassword: password });
 const pool = createPool(config);
 try {
-  const [existing] = await pool.execute('SELECT id FROM users WHERE email=?', [input.email]);
+  const [existing] = await pool.execute("SELECT ma FROM nguoi_dung WHERE email=?", [input.email]);
   if (existing.length) throw new Error('Email đã tồn tại; seed không đổi role hoặc mật khẩu tài khoản có sẵn.');
-  await pool.execute("INSERT INTO users(full_name,email,password_hash,role,status) VALUES (?,?,?,'admin','active')",
+  await pool.execute("INSERT INTO nguoi_dung(ho_ten,email,mat_khau_bam,vai_tro,trang_thai) VALUES (?,?,?,'admin','active')",
     [input.fullName, input.email, await bcrypt.hash(input.password, config.BCRYPT_ROUNDS)]);
   console.log('Đã tạo admin từ env.');
 } finally { await pool.end(); }

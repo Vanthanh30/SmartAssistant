@@ -5,7 +5,7 @@ export const tokenHash = token => createHash('sha256').update(token).digest('hex
 export const userDto = user => ({ id: String(user.id), fullName: user.full_name, email: user.email,
   role: user.role, status: user.status,
   avatarStorageStatus: user.avatar_storage_status ?? null,
-  avatarUrl: user.avatar_key ? `/api/v1/users/me/avatar?v=${new Date(user.updated_at).getTime()}` : null });
+  avatarUrl: user.avatar_key ? `/api/v1/nguoi_dung/me/avatar?v=${new Date(user.updated_at).getTime()}` : null });
 export function authService(repository, config) {
   let dummyHash;
   const dummy = () => dummyHash ??= bcrypt.hash(randomBytes(32).toString('hex'), config.BCRYPT_ROUNDS);

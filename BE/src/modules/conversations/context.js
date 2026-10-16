@@ -6,7 +6,7 @@ const heading = /^(?:BÀI\s+\d+|CHƯƠNG\s+\d+|PHẦN\s+\d+|[IVX]+[.)]\s+|\d+(?:
 export async function expandContext(db, owner, course, sources, seedLimit) {
   if (!sources.length) return [];
   const seeds = sources.slice(0, seedLimit);
-  const conditions = seeds.map(() => '(ch.document_id=? AND ch.chunk_order BETWEEN ? AND ?)');
+  const conditions = seeds.map(() => "(ch.ma_tai_lieu=? AND ch.thu_tu_doan BETWEEN ? AND ?)");
   const args = seeds.flatMap(s => [s.documentId, Math.max(0, s.chunkOrder - 12), s.chunkOrder + 12]);
   const [rows] = await conversationRepository(db).neighbours(conditions, [owner, course, ...args]);
   const selected = new Map();
@@ -27,7 +27,7 @@ export async function expandContext(db, owner, course, sources, seedLimit) {
       || (!hasHeading(neighbours[from]) && neighbours[from].chunk_order > 0 && from === 0);
     for (const row of neighbours.slice(from, to + 1)) {
       const old = selected.get(row.id);
-      selected.set(row.id, { chunkId: row.id, documentId: String(row.document_id), content: row.content,
+      selected.set(row.id, { chunkId: row.id, documentId: String(row.document_id), content: row.content, pageMap: row.page_map, sourceStart: row.source_start,
         pageFrom: row.page_from, pageTo: row.page_to, chunkOrder: row.chunk_order,
         fileName: row.original_name, score: Math.max(old?.score ?? -1, seed.score),
         contextIncomplete: !!old?.contextIncomplete || incomplete });
