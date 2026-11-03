@@ -6,7 +6,7 @@ import { api } from '../../lib/api.js';
 import { pdfContent } from '../documents/api.js';
 import { useAuth } from '../auth/useAuth.js';
 import { Button } from '../../components/ui/Button.jsx';
-import { locateFormulaRegion, pdfImageBoxes, locateBlockRegion } from './formulaRegion.js';
+import { locateFormulaRegion, pdfImageBoxes, locateBlockRegion } from './pdfFormulaRegion.js';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 const assets = `${import.meta.env.BASE_URL}pdfjs/`;

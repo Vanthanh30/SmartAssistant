@@ -4,7 +4,8 @@ import { useAuth } from '../auth/useAuth.js';
 import { Modal } from '../../components/Modal.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { deleteDocument } from './api.js';
-export function DeleteDocumentDialog({ document, courseId, onAccepted, removeDocument = deleteDocument, queryScope = 'student' }) {
+import { Trash2 } from 'lucide-react';
+export function DeleteDocumentDialog({ document, courseId, onAccepted, removeDocument = deleteDocument, queryScope = 'student', compact = false }) {
   const { data: auth } = useAuth(); const client = useQueryClient();
   const [open, setOpen] = useState(false); const locked = useRef(false);
   const mutation = useMutation({ retry: false, mutationFn: () => removeDocument(document.id, auth.csrfToken),
@@ -26,8 +27,9 @@ export function DeleteDocumentDialog({ document, courseId, onAccepted, removeDoc
   const changeOpen = next => { if (locked.current) return; setOpen(next); mutation.reset(); };
   const submit = () => { if (locked.current) return; locked.current = true; mutation.mutate(); };
   if (document.status === 'deleted') return null;
-  return <><Button disabled={document.status === 'deleting' && !document.deletionRetryable} onClick={() => changeOpen(true)}>
-    {document.deletionRetryable ? 'Thử xóa lại' : document.status === 'deleting' ? 'Đang xóa…' : 'Xóa PDF'}</Button>
+  const label = document.deletionRetryable ? 'Thử xóa lại' : document.status === 'deleting' ? 'Đang xóa…' : 'Xóa PDF';
+  return <><Button className={compact ? 'document-delete-icon' : undefined} aria-label={compact ? `${label}: ${document.fileName}` : undefined} title={compact ? label : undefined} disabled={document.status === 'deleting' && !document.deletionRetryable} onClick={() => changeOpen(true)}>
+    {compact ? <Trash2 size={16} aria-hidden="true"/> : label}</Button>
     <Modal open={open} onOpenChange={changeOpen} title={document.deletionRetryable ? 'Tiếp tục xóa tài liệu' : 'Xóa tài liệu PDF'}
       description={`Tài liệu: ${document.fileName}`}>
       <p>Tài liệu này sẽ không thể mở hoặc dùng làm nguồn ngay khi yêu cầu xóa được tiếp nhận. File và nội dung đã xử lý sẽ được xóa; các tài liệu khác trong môn học được giữ lại.</p>

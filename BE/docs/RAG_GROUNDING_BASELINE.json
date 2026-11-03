@@ -1,0 +1,110 @@
+{
+  "fixtureOnly": true,
+  "denseFaissMeasured": false,
+  "geminiCalls": 0,
+  "datasetHash": "c7a0c3ce71c7c6f1f09524c7078495e2cf9ec2e3f42435cc4aba8ef6fadbf026",
+  "cases": 8,
+  "recallAt5": 1,
+  "mrr": 1,
+  "gateAccuracy": 0.625,
+  "results": [
+    {
+      "id": "term",
+      "recallAt5": 1,
+      "reciprocalRank": 1,
+      "accepted": true,
+      "expectedAccepted": true,
+      "ranking": [
+        "11"
+      ],
+      "p50Ms": 0.006799999999998363,
+      "p95Ms": 0.08310000000000173
+    },
+    {
+      "id": "alias-rna",
+      "recallAt5": 1,
+      "reciprocalRank": 1,
+      "accepted": false,
+      "expectedAccepted": true,
+      "ranking": [
+        "11"
+      ],
+      "p50Ms": 0.005900000000025329,
+      "p95Ms": 0.021299999999996544
+    },
+    {
+      "id": "definition",
+      "recallAt5": 1,
+      "reciprocalRank": 1,
+      "accepted": true,
+      "expectedAccepted": true,
+      "ranking": [
+        "12"
+      ],
+      "p50Ms": 0.005400000000008731,
+      "p95Ms": 0.013800000000003365
+    },
+    {
+      "id": "five-facets",
+      "recallAt5": 1,
+      "reciprocalRank": 1,
+      "accepted": false,
+      "expectedAccepted": true,
+      "ranking": [
+        "24",
+        "23",
+        "21",
+        "22",
+        "25"
+      ],
+      "p50Ms": 0.017899999999997362,
+      "p95Ms": 0.09360000000000923
+    },
+    {
+      "id": "partial",
+      "recallAt5": 1,
+      "reciprocalRank": 1,
+      "accepted": false,
+      "expectedAccepted": true,
+      "ranking": [
+        "21",
+        "22"
+      ],
+      "p50Ms": 0.008499999999997954,
+      "p95Ms": 0.009399999999999409
+    },
+    {
+      "id": "unknown",
+      "recallAt5": null,
+      "reciprocalRank": 0,
+      "accepted": false,
+      "expectedAccepted": false,
+      "ranking": [],
+      "p50Ms": 0.003899999999987358,
+      "p95Ms": 0.010099999999994225
+    },
+    {
+      "id": "wrong-scope",
+      "recallAt5": null,
+      "reciprocalRank": 0,
+      "accepted": false,
+      "expectedAccepted": false,
+      "ranking": [],
+      "p50Ms": 0.0018000000000029104,
+      "p95Ms": 0.003299999999995862
+    },
+    {
+      "id": "typo",
+      "recallAt5": 1,
+      "reciprocalRank": 1,
+      "accepted": true,
+      "expectedAccepted": true,
+      "ranking": [
+        "21",
+        "22"
+      ],
+      "p50Ms": 0.004199999999997317,
+      "p95Ms": 0.010699999999985721
+    }
+  ]
+}

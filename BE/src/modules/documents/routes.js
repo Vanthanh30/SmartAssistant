@@ -1,46 +1,57 @@
-import { Router } from 'express';
-import multer from 'multer';
-import { rateLimit } from 'express-rate-limit';
-import { requireAuth, requireRole, requireOrigin, requireCsrf } from '../../middlewares/auth.js';
-import { AppError } from '../../shared/AppError.js';
-import { validate } from '../../shared/validation.js';
-import { courseIdSchema } from '../courses/schema.js';
-import { documentIdSchema, documentQuerySchema } from './schema.js';
-import { documentRepository } from './repository.js';
+import { requireOrigin, requireCsrf } from '../../middlewares/auth.js';
+import { validate } from '../../middlewares/validate.js';
+import { pdfUpload } from '../../middlewares/upload.js';
+import { studentRateLimit } from '../../middlewares/rateLimit.js';
+import { idParams } from '../shared/idSchema.js';
+import { pageInput } from '../shared/paginationSchema.js';
+import { documentsRequestSchemas } from './requestSchema.js';
+import { sourceService } from './sourceService.js';
 import { documentService } from './service.js';
 import { documentController } from './controller.js';
-import { removeUpload } from './storage.js';
-import { deletionService } from './deletion.js';
-import { z } from 'zod';
-import { sendData } from '../../shared/AppError.js';
-let activePdfUploads=0;
-export function documentRoutes(pool, auth, config) {
-  const courseDocuments = Router({ mergeParams: true });
-  const documents = Router();
-  const deleteDocument = deletionService(pool);
-  const controller = documentController(documentService(documentRepository(pool), config), deleteDocument);
-  for (const router of [courseDocuments, documents]) router.use(requireAuth(auth, config), requireRole('student'), (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-  const upload = multer({ storage: multer.memoryStorage(),
-    limits: { fileSize: config.MAX_UPLOAD_MB * 1024 ** 2, files: 1, fields: 0, parts: 1 },
-    fileFilter: (req, file, callback) => callback(file.mimetype === 'application/pdf' && /\.pdf$/i.test(file.originalname) ? null : new AppError(422, 'INVALID_PDF_TYPE', 'Chỉ nhận file .pdf với MIME application/pdf.'), true) }).single('file');
-  const limit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, keyGenerator: req => req.auth.user.id,
-    standardHeaders: 'draft-8', legacyHeaders: false, handler: (req, res, next) => next(new AppError(429, 'RATE_LIMITED', 'Quá nhiều lần tải PDF. Vui lòng thử lại sau.')) });
-  courseDocuments.get('/', validate(courseIdSchema, 'params', 'ids'), validate(documentQuerySchema, 'query', 'filters'), controller.list);
-  courseDocuments.post('/', requireOrigin(config), requireCsrf, validate(courseIdSchema, 'params', 'ids'), controller.checkCourse, limit,
-    (req, res, next) => {
-      if(activePdfUploads>=3)return next(new AppError(503,'UPLOAD_BUSY','Hệ thống đang xử lý nhiều file; vui lòng thử lại.'));
-      activePdfUploads++;req.uploadKind='pdf';
-      upload(req,res,async error=>{try{if(error)return next(error);await controller.upload(req,res);}catch(failure){next(failure);}finally{activePdfUploads--;}});
-    });
-  documents.get('/:documentId', validate(documentIdSchema, 'params', 'ids'), controller.get);
-  documents.get('/:documentId/chunks/:chunkId', validate(z.object({ documentId: courseIdSchema.shape.courseId, chunkId: z.string().regex(/^[a-f0-9]{64}$/) }), 'params', 'ids'), async (req,res) => {
-    const [rows] = await pool.execute("SELECT ch.* FROM doan_tai_lieu ch JOIN tai_lieu d ON d.ma=ch.ma_tai_lieu WHERE ch.ma=? AND d.ma=? AND d.ma_nguoi_dung=? AND d.trang_thai='ready' AND d.luc_xoa IS NULL", [req.ids.chunkId, req.ids.documentId, req.auth.user.id]);
-    if (!rows.length) throw new AppError(404,'SOURCE_NOT_FOUND','Nguồn không còn khả dụng.');
-    const ch = rows[0]; sendData(req,res,{ chunkId: ch.id, documentId: String(ch.document_id), content: ch.content, pageFrom: ch.page_from, pageTo: ch.page_to });
-  });
-  documents.delete('/:documentId', requireOrigin(config), requireCsrf, validate(documentIdSchema, 'params', 'ids'),
-    controller.remove);
-  documents.get('/:documentId/content', validate(documentIdSchema, 'params', 'ids'), controller.content);
-  for (const router of [courseDocuments, documents]) router.use(async (error, req, res, next) => { if (req.file?.path) await removeUpload(req.file.path); next(error); });
-  return { courseDocuments, documents };
+import { studentRouter } from '../shared/studentRouter.js';
+
+export function documentRoutes(pool, auth, config, services = {}) {
+  const router = studentRouter(auth, config, ['/documents', '/courses']);
+  const schemas = documentsRequestSchemas();
+  const service = documentService(pool, config);
+  const controller = documentController(service, sourceService(pool, config));
+  const params = (key) => validate(idParams(key), 'params', 'ids');
+  const mutate = [requireOrigin(config), requireCsrf];
+  const limit = services.studentLimit || studentRateLimit();
+  const upload = pdfUpload(config);
+  router.get(
+    '/courses/:courseId/documents',
+    params('courseId'),
+    validate(pageInput, 'query', 'filters'),
+    controller.list,
+  );
+  router.post(
+    '/courses/:courseId/documents',
+    ...mutate,
+    limit,
+    params('courseId'),
+    upload,
+    controller.upload,
+  );
+  router.post(
+    '/courses/:courseId/documents/restore-index',
+    ...mutate,
+    params('courseId'),
+    controller.restoreIndex,
+  );
+  router.get('/documents/:documentId', params('documentId'), controller.get);
+  router.post(
+    '/documents/:documentId/process',
+    ...mutate,
+    params('documentId'),
+    controller.process,
+  );
+  router.get('/documents/:documentId/content', params('documentId'), controller.content);
+  router.delete('/documents/:documentId', ...mutate, params('documentId'), controller.remove);
+  router.get(
+    '/documents/:documentId/chunks/:chunkId',
+    validate(schemas.chunkParams, 'params', 'ids'),
+    controller.chunk,
+  );
+  return router;
 }

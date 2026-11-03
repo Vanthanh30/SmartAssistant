@@ -1,0 +1,2 @@
+export const sourceLayoutPolicy =
+  ' Nếu nguồn có limitations: table-structure-uncertain nghĩa là chưa xác minh quan hệ hàng/cột, không suy ra ô ghép hoặc ghép số liệu giữa cột; formula-order-uncertain nghĩa là không được khôi phục phân số, số mũ hay ký hiệu bị tách; rotated-text/invalid-text-geometry nghĩa là thứ tự đọc chưa chắc. Chỉ dùng khẳng định độc lập có căn cứ; thiếu căn cứ thì nêu giới hạn và đề nghị xem trang gốc. Không phân tích hình/biểu đồ khi chỉ có văn bản.';

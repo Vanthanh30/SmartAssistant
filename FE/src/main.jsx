@@ -1,3 +1,4 @@
+import { clearCalendarStorage } from './features/studyCalendar/storage.js';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -11,6 +12,7 @@ import '@fontsource/be-vietnam-pro/600.css';
 import '@fontsource/be-vietnam-pro/700.css';
 const client = new QueryClient();
 window.addEventListener('session-expired', () => {
+  const owner=client.getQueryData(sessionKey)?.user.id;if(owner)clearCalendarStorage(owner);
   client.cancelQueries({ queryKey: sessionKey });
   client.setQueryData(sessionKey, null);
   client.removeQueries({ predicate: query => query.queryKey[0] !== 'auth' });

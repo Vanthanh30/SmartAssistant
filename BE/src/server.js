@@ -1,4 +1,5 @@
-import { assertSchema } from './config/schema.js';
+import { recoverInterruptedDocumentProcessing,recoverInterruptedConversationReplies } from './modules/shared/recovery.js';
+import { assertDatabaseSchema } from './config/schema.js';
 import { loadConfig } from "./config/env.js";
 import { createPool } from "./config/db.js";
 import { createApp } from "./app.js";
@@ -7,8 +8,11 @@ import { prepareStorage } from "./modules/documents/storage.js";
 let pool;
 try {
   const config = loadConfig();
+
   pool = createPool(config);
-  await assertSchema(pool);
+  await assertDatabaseSchema(pool);
+  await recoverInterruptedDocumentProcessing(pool);
+  await recoverInterruptedConversationReplies(pool);
   await prepareStorage(config);
   const server = createApp(pool, config).listen(config.PORT, "127.0.0.1", () =>
     log("api", "ready", { port: config.PORT }),

@@ -35,8 +35,9 @@ function start(name, command, args, ipc = false) {
   log('launcher', 'spawned', { child: name, pid: child.pid });
   return child;
 }
-async function health(url, headers = {}) {
-  for (let i = 0; i < 120 && !stopping; i++) {
+async function health(url, headers = {}, timeoutMs = 60000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && !stopping) {
     try { const response = await fetch(url, { headers, signal: AbortSignal.timeout(1500) }); if (response.ok) return; } catch { /* startup wait */ }
     await delay(500);
   }
@@ -65,8 +66,8 @@ try {
     });
     start('api', process.execPath, ['src/server.js'], true);
     await Promise.all([workerReady, health(`http://127.0.0.1:${config.PORT}/api/v1/health/ready`),
-      health(`http://127.0.0.1:${ragPort}/health/ready`, { 'X-Service-Token': process.env.RAG_SERVICE_TOKEN })]);
-    log('launcher', 'ready', { scope: 'runtime-and-source-pipeline', indexingImplemented: true });
+      health(`http://127.0.0.1:${ragPort}/health/ready`, { 'X-Service-Token': process.env.RAG_SERVICE_TOKEN }, 300000)]);
+    log('launcher', 'ready', { scope: 'study-assistant-api-worker-and-rag', indexingImplemented: true });
     process.send?.({ type: 'ready' });
   }
 } catch (error) { log('launcher', 'startup-failed', { reason: error.message }); await shutdown(1); }

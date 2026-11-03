@@ -1,3 +1,58 @@
+// Break dense prose only at sentence boundaries; keep decimals, initials and formulas intact.
+export function readableParagraphs(text) {
+  if (text.length < 220 || /https?:\/\//u.test(text)) return [text];
+  const sentences = text.split(/(?<=[.!?])\s+(?=[\p{Lu}][\p{L}]{1,})/u);
+  const paragraphs = [];
+  for (const sentence of sentences) {
+    const previous = paragraphs.at(-1);
+    if (previous && /(?:^|\s)\d+[.)]$/u.test(previous)) {
+      paragraphs[paragraphs.length - 1] += ' ' + sentence;
+      continue;
+    }
+    if (previous && previous.length < 60 && previous.length + sentence.length < 180)
+      paragraphs[paragraphs.length - 1] += ' ' + sentence;
+    else paragraphs.push(sentence);
+  }
+  return paragraphs;
+}
+
+// Repair PDF list markers split onto separate lines, including saved answer blocks.
+// Formula blocks retain their original source anchors and offsets.
+export function normalizeAnswerLists(input) {
+  const result = [];
+  for (let index = 0; index < input.length; index++) {
+    const block = input[index];
+    if (!['paragraph', 'heading'].includes(block.type)) {
+      result.push(block);
+      continue;
+    }
+    const lines = (block.text || '').split(/\n+/u).map(line => line.trim()).filter(Boolean);
+    for (let offset = 0; offset < lines.length; offset++) {
+      let line = lines[offset];
+      const marker = line.match(/^(\d+)[.)]$/u);
+      if (marker) {
+        if (lines[offset + 1]) line += ' ' + lines[++offset];
+        else {
+          const next = input[index + 1];
+          if (next?.type === 'paragraph' && next.text?.trim() && !/^\d+[.)]/u.test(next.text.trim())) {
+            line += ' ' + next.text.trim();
+            index++;
+          }
+        }
+      }
+      const numbered = line.match(/^(\d+)[.)]\s+(.+)$/u);
+      if (numbered) {
+        const number = Number(numbered[1]);
+        const previous = result.at(-1);
+        if (previous?.type === 'list' && previous.ordered && previous.start + previous.items.length === number)
+          previous.items.push(numbered[2]);
+        else result.push({ id: `${block.id}-list-${offset}`, type: 'list', ordered: true, start: number, items: [numbered[2]] });
+      } else result.push({ ...block, id: `${block.id}-${offset}`, text: line });
+    }
+  }
+  return result;
+}
+
 // Infer visible structure from markers preserved in extracted text, not subject names.
 export function answerBlocks(content) {
   const lines = content

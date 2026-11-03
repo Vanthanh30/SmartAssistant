@@ -1,0 +1,1231 @@
+{
+  "version": 16,
+  "tables": {
+    "nguoi_dung": {
+      "columns": [
+        {
+          "name": "ma_nguoi_dung",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ho_ten",
+          "type": "VARCHAR(150)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "email",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "mat_khau",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "anh_dai_dien",
+          "type": "VARCHAR(500)",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "vai_tro",
+          "type": "ENUM('học sinh','quản trị viên')",
+          "nullable": false,
+          "default": "'học sinh'",
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_thai",
+          "type": "ENUM('hoạt động','bị khóa')",
+          "nullable": false,
+          "default": "'hoạt động'",
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_tao",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_nguoi_dung"
+      ],
+      "foreignKeys": [],
+      "unique": [
+        [
+          "email"
+        ]
+      ],
+      "checks": [],
+      "indexes": []
+    },
+    "mon_hoc": {
+      "columns": [
+        {
+          "name": "ma_mon_hoc",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_nguoi_dung",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ten_mon_hoc",
+          "type": "VARCHAR(200)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "mo_ta",
+          "type": "TEXT",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_tao",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_mon_hoc"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_nguoi_dung",
+          "table": "nguoi_dung",
+          "key": "ma_nguoi_dung"
+        }
+      ],
+      "unique": [],
+      "checks": [],
+      "indexes": []
+    },
+    "tai_lieu": {
+      "columns": [
+        {
+          "name": "ma_tai_lieu",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_mon_hoc",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ten_tai_lieu",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "dinh_danh_dam_may",
+          "type": "VARCHAR(500)",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_bam_tap_tin",
+          "type": "CHAR(64)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "so_trang",
+          "type": "INT UNSIGNED",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "cau_hinh_xu_ly",
+          "type": "JSON",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_thai",
+          "type": "VARCHAR(30)",
+          "nullable": false,
+          "default": "'đã tải lên'",
+          "autoIncrement": false
+        },
+        {
+          "name": "noi_dung_tom_tat",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_tai_len",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_xu_ly",
+          "type": "DATETIME",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_xoa",
+          "type": "DATETIME",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_tai_lieu"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_mon_hoc",
+          "table": "mon_hoc",
+          "key": "ma_mon_hoc"
+        }
+      ],
+      "unique": [],
+      "checks": [
+        "`trang_thai` IN ('đã tải lên','đang xử lý','sẵn sàng','thất bại','đang xóa','đã xóa','không hỗ trợ')",
+        "`so_trang` IS NULL OR `so_trang` >= 1"
+      ],
+      "indexes": [
+        [
+          "ma_mon_hoc",
+          "ma_bam_tap_tin"
+        ]
+      ]
+    },
+    "bieu_dien_noi_dung": {
+      "columns": [
+        {
+          "name": "ma_bieu_dien",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_dinh_danh",
+          "type": "CHAR(64)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ten_mo_hinh",
+          "type": "VARCHAR(100)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "dinh_danh_chi_muc",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_trong_chi_muc",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_tao",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_bieu_dien"
+      ],
+      "foreignKeys": [],
+      "unique": [],
+      "checks": [],
+      "indexes": [
+        [
+          "ma_dinh_danh"
+        ]
+      ]
+    },
+    "doan_tai_lieu": {
+      "columns": [
+        {
+          "name": "ma_doan_tai_lieu",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_tai_lieu",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_vec_to",
+          "type": "BIGINT UNSIGNED",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "thu_tu_doan",
+          "type": "INT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "noi_dung",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_bam_doan",
+          "type": "CHAR(64)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_bat_dau",
+          "type": "INT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_ket_thuc",
+          "type": "INT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "vi_tri_tren_trang",
+          "type": "JSON",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_tao",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_doan_tai_lieu"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_tai_lieu",
+          "table": "tai_lieu",
+          "key": "ma_tai_lieu"
+        },
+        {
+          "column": "ma_vec_to",
+          "table": "bieu_dien_noi_dung",
+          "key": "ma_bieu_dien"
+        }
+      ],
+      "unique": [
+        [
+          "ma_tai_lieu",
+          "thu_tu_doan"
+        ]
+      ],
+      "checks": [
+        "`trang_bat_dau` >= 1 AND `trang_ket_thuc` >= `trang_bat_dau`"
+      ],
+      "indexes": [
+        [
+          "ma_bam_doan"
+        ]
+      ]
+    },
+    "hoi_thoai": {
+      "columns": [
+        {
+          "name": "ma_hoi_thoai",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_mon_hoc",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "tieu_de",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_tao",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_cap_nhat",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_hoi_thoai"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_mon_hoc",
+          "table": "mon_hoc",
+          "key": "ma_mon_hoc"
+        }
+      ],
+      "unique": [],
+      "checks": [],
+      "indexes": []
+    },
+    "luot_hoi_dap": {
+      "columns": [
+        {
+          "name": "ma_luot_hoi_dap",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_hoi_thoai",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "cau_hoi",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "cau_hoi_truy_hoi",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "noi_dung_tra_loi",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "mo_hinh_llm",
+          "type": "VARCHAR(100)",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ket_qua_kiem_chung",
+          "type": "ENUM('chưa kiểm chứng','đạt','không đạt','không đủ ngữ cảnh')",
+          "nullable": false,
+          "default": "'chưa kiểm chứng'",
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_thai",
+          "type": "VARCHAR(30)",
+          "nullable": false,
+          "default": "'đang xử lý'",
+          "autoIncrement": false
+        },
+        {
+          "name": "thoi_diem_hoi",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        },
+        {
+          "name": "thoi_diem_tra_loi",
+          "type": "DATETIME",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_luot_hoi_dap"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_hoi_thoai",
+          "table": "hoi_thoai",
+          "key": "ma_hoi_thoai"
+        }
+      ],
+      "unique": [],
+      "checks": [
+        "`trang_thai` IN ('đang xử lý','đã trả lời','không đủ ngữ cảnh','thất bại')"
+      ],
+      "indexes": []
+    },
+    "pham_vi_hoi_dap": {
+      "columns": [
+        {
+          "name": "ma_luot_hoi_dap",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_tai_lieu",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_luot_hoi_dap",
+        "ma_tai_lieu"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_luot_hoi_dap",
+          "table": "luot_hoi_dap",
+          "key": "ma_luot_hoi_dap"
+        },
+        {
+          "column": "ma_tai_lieu",
+          "table": "tai_lieu",
+          "key": "ma_tai_lieu"
+        }
+      ],
+      "unique": [],
+      "checks": [],
+      "indexes": []
+    },
+    "ngu_canh_hoi_dap": {
+      "columns": [
+        {
+          "name": "ma_ngu_canh",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_luot_hoi_dap",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_doan_tai_lieu",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "diem_tuong_dong",
+          "type": "DECIMAL(8,6)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "thu_hang",
+          "type": "INT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "thu_tu_trich_dan",
+          "type": "INT UNSIGNED",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "noi_dung_ngu_canh",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "thong_tin_nguon",
+          "type": "JSON",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "vi_tri_trich_dan",
+          "type": "JSON",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_ngu_canh"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_luot_hoi_dap",
+          "table": "luot_hoi_dap",
+          "key": "ma_luot_hoi_dap"
+        },
+        {
+          "column": "ma_doan_tai_lieu",
+          "table": "doan_tai_lieu",
+          "key": "ma_doan_tai_lieu"
+        }
+      ],
+      "unique": [],
+      "checks": [
+        "`diem_tuong_dong` BETWEEN -1 AND 1",
+        "`thu_hang` >= 1 AND (`thu_tu_trich_dan` IS NULL OR `thu_tu_trich_dan` >= 1)"
+      ],
+      "indexes": []
+    },
+    "bai_on_tap": {
+      "columns": [
+        {
+          "name": "ma_bai_on_tap",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_mon_hoc",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ten_bai_on_tap",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "loai_bai",
+          "type": "ENUM('trắc nghiệm','thẻ ghi nhớ')",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "nguon_tao",
+          "type": "ENUM('trí tuệ nhân tạo','thủ công','quy tắc')",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "mo_hinh_tao",
+          "type": "VARCHAR(100)",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "cau_hinh_tao",
+          "type": "JSON",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_thai",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": "'sẵn sàng'",
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_tao",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_bai_on_tap"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_mon_hoc",
+          "table": "mon_hoc",
+          "key": "ma_mon_hoc"
+        }
+      ],
+      "unique": [],
+      "checks": [
+        "`trang_thai` IN ('đang tạo','sẵn sàng','thất bại','đã lưu trữ')"
+      ],
+      "indexes": []
+    },
+    "cau_hoi_on_tap": {
+      "columns": [
+        {
+          "name": "ma_cau_hoi",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_bai_on_tap",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "thu_tu",
+          "type": "INT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "noi_dung_cau_hoi",
+          "type": "TEXT",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "phuong_an",
+          "type": "JSON",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "dap_an",
+          "type": "TEXT",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "giai_thich",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "nguon_tham_khao",
+          "type": "JSON",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_cau_hoi"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_bai_on_tap",
+          "table": "bai_on_tap",
+          "key": "ma_bai_on_tap"
+        }
+      ],
+      "unique": [
+        [
+          "ma_bai_on_tap",
+          "thu_tu"
+        ]
+      ],
+      "checks": [],
+      "indexes": []
+    },
+    "lan_lam_bai": {
+      "columns": [
+        {
+          "name": "ma_lan_lam_bai",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_bai_on_tap",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_nguoi_dung",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_thai",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": "'đang làm'",
+          "autoIncrement": false
+        },
+        {
+          "name": "diem",
+          "type": "DECIMAL(5,2)",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "bat_dau_luc",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        },
+        {
+          "name": "hoan_thanh_luc",
+          "type": "DATETIME",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_lan_lam_bai"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_bai_on_tap",
+          "table": "bai_on_tap",
+          "key": "ma_bai_on_tap"
+        },
+        {
+          "column": "ma_nguoi_dung",
+          "table": "nguoi_dung",
+          "key": "ma_nguoi_dung"
+        }
+      ],
+      "unique": [],
+      "checks": [
+        "`trang_thai` IN ('đang làm','hoàn thành')",
+        "`diem` IS NULL OR `diem` BETWEEN 0 AND 100"
+      ],
+      "indexes": []
+    },
+    "chi_tiet_lam_bai": {
+      "columns": [
+        {
+          "name": "ma_lan_lam_bai",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_cau_hoi",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "tra_loi_nguoi_dung",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "tra_loi_dung",
+          "type": "BOOLEAN",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "muc_do_ghi_nho",
+          "type": "VARCHAR(20)",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "thoi_diem_tra_loi",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_lan_lam_bai",
+        "ma_cau_hoi"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_lan_lam_bai",
+          "table": "lan_lam_bai",
+          "key": "ma_lan_lam_bai"
+        },
+        {
+          "column": "ma_cau_hoi",
+          "table": "cau_hoi_on_tap",
+          "key": "ma_cau_hoi"
+        }
+      ],
+      "unique": [],
+      "checks": [
+        "`muc_do_ghi_nho` IS NULL OR `muc_do_ghi_nho` IN ('học lại','khó','tốt','dễ')"
+      ],
+      "indexes": []
+    },
+    "ke_hoach_hoc": {
+      "columns": [
+        {
+          "name": "ma_ke_hoach",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_nguoi_dung",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_mon_hoc",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ten_ke_hoach",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "muc_tieu",
+          "type": "TEXT",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_bat_dau",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_ket_thuc",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "so_buoi_mong_muon",
+          "type": "INT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "dieu_kien_hoc",
+          "type": "JSON",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_thai",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": "'đã xác nhận'",
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_tao",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_ke_hoach"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_nguoi_dung",
+          "table": "nguoi_dung",
+          "key": "ma_nguoi_dung"
+        },
+        {
+          "column": "ma_mon_hoc",
+          "table": "mon_hoc",
+          "key": "ma_mon_hoc"
+        }
+      ],
+      "unique": [],
+      "checks": [
+        "`ngay_ket_thuc` >= `ngay_bat_dau` AND `so_buoi_mong_muon` >= 1",
+        "`trang_thai` IN ('đã xác nhận','hoàn thành','đã hủy')"
+      ],
+      "indexes": []
+    },
+    "buoi_hoc": {
+      "columns": [
+        {
+          "name": "ma_buoi_hoc",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": true
+        },
+        {
+          "name": "ma_ke_hoach",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ma_tai_lieu",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "tieu_de",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "noi_dung_can_hoc",
+          "type": "TEXT",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "bat_dau_luc",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "ket_thuc_luc",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "nhac_truoc_phut",
+          "type": "INT UNSIGNED",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_thai",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": "'đã lên lịch'",
+          "autoIncrement": false
+        },
+        {
+          "name": "dinh_danh_su_kien_google",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_buoi_hoc"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_ke_hoach",
+          "table": "ke_hoach_hoc",
+          "key": "ma_ke_hoach"
+        },
+        {
+          "column": "ma_tai_lieu",
+          "table": "tai_lieu",
+          "key": "ma_tai_lieu"
+        }
+      ],
+      "unique": [],
+      "checks": [
+        "`ket_thuc_luc` > `bat_dau_luc`",
+        "`trang_thai` IN ('đã lên lịch','hoàn thành','đã hủy')"
+      ],
+      "indexes": [
+        [
+          "bat_dau_luc",
+          "ket_thuc_luc"
+        ]
+      ]
+    },
+    "ket_noi_google": {
+      "columns": [
+        {
+          "name": "ma_nguoi_dung",
+          "type": "BIGINT UNSIGNED",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "dinh_danh_google",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "email_google",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "refresh_token_ma_hoa",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        },
+        {
+          "name": "trang_thai",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": "'chưa kết nối'",
+          "autoIncrement": false
+        },
+        {
+          "name": "ngay_ket_noi",
+          "type": "DATETIME",
+          "nullable": true,
+          "default": null,
+          "autoIncrement": false
+        }
+      ],
+      "primary": [
+        "ma_nguoi_dung"
+      ],
+      "foreignKeys": [
+        {
+          "column": "ma_nguoi_dung",
+          "table": "nguoi_dung",
+          "key": "ma_nguoi_dung"
+        }
+      ],
+      "unique": [
+        [
+          "dinh_danh_google"
+        ]
+      ],
+      "checks": [
+        "`trang_thai` IN ('chưa kết nối','đã kết nối','đã ngắt kết nối','cần kết nối lại')"
+      ],
+      "indexes": []
+    }
+  }
+}

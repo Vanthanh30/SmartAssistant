@@ -9,6 +9,7 @@ import unicodedata
 import uuid
 import shutil
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 import faiss
@@ -64,6 +65,26 @@ class Pipeline:
         self.config = config
         self.model = None
         self.lock = threading.RLock()
+        self.query_vectors = OrderedDict()
+        self.search_indexes = OrderedDict()
+        self.search_index_bytes = 0
+
+    def cached_search_index(self, key, build):
+        cached = self.search_indexes.get(key)
+        if cached is not None:
+            self.search_indexes.move_to_end(key)
+            return cached[0], cached[1]
+        index, ids = build()
+        size = index.ntotal * index.d * 4 + sum(len(value) + 64 for value in ids)
+        # One shared budget for full/scoped indexes; keep RAM bounded on small machines.
+        budget = 16 * 1024 ** 2
+        if size <= budget:
+            while self.search_indexes and (self.search_index_bytes + size > budget or len(self.search_indexes) >= 8):
+                _, (_, _, removed) = self.search_indexes.popitem(last=False)
+                self.search_index_bytes -= removed
+            self.search_indexes[key] = (index, ids, size)
+            self.search_index_bytes += size
+        return index, ids
 
     def load(self):
         with self.lock:
@@ -92,7 +113,7 @@ class Pipeline:
                 page_map.append({'page': index, 'start': left, 'end': len(text)})
                 text += '\n\n' if index < len(pages) else ''
             parents = []
-            for order, part in enumerate(segments(tokenizer, text, self.config['parent_tokens'], self.config['overlap'])):
+            for order, part in enumerate(segments(tokenizer, text, min(self.config['parent_tokens'], model.max_seq_length), self.config['overlap'], 'passage: ')):
                 mapping = [p for p in page_map if p['start'] < part['end'] and p['end'] > part['start']]
                 if not mapping:
                     continue
@@ -122,11 +143,15 @@ class Pipeline:
                     texts.append(value); ids.append(chunk['id'])
                     windows.append({'chunkId': chunk['id'], 'start': window['start'], 'end': window['end'],
                                     'tokens': window['tokens'], 'windowId': digest([chunk['id'], window['start'], window['end']])})
-            vectors = model.encode(texts, batch_size=16, normalize_embeddings=True, convert_to_numpy=True,
-                                   show_progress_bar=False).astype('float32')
             key = f'{owner}/{course}/{document}/{digest([self.contract(), texts, ids])}'
             destination = self.safe_path(self.config['vector_root'], key)
             if not destination.exists():
+                # Parent overlap can repeat windows. Encode each distinct passage once.
+                unique = list(dict.fromkeys(texts))
+                encoded = model.encode(unique, batch_size=16, normalize_embeddings=True,
+                                       convert_to_numpy=True, show_progress_bar=False).astype('float32')
+                positions = {text: index for index, text in enumerate(unique)}
+                vectors = encoded[[positions[text] for text in texts]]
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 temporary = destination.with_name(destination.name + '.' + uuid.uuid4().hex)
                 temporary.mkdir()
@@ -196,29 +221,32 @@ class Pipeline:
                     or existing.d != contract['dimension'] or existing.ntotal != len(ids)
                     or hashlib.sha256((destination / 'index.faiss').read_bytes()).hexdigest() != manifest['sha256']):
                 raise ValueError('INDEX_INTEGRITY_FAILED')
-            return {'version': version, 'manifestKey': key, **contract}
+            return {'version': version, 'manifestKey': key, 'positions': [{'chunkId': chunk_id, 'position': i} for i, chunk_id in enumerate(ids)], **contract}
 
-    def search(self, owner, course, key, query, limit, allowed_chunk_ids=None):
+    def search(self, owner, course, key, query, limit, allowed_chunk_ids=None, timings=None, snapshot=None):
         with self.lock:
+            began = time.perf_counter()
             if not key.startswith(f'{owner}/{course}/'):
                 raise ValueError('SCOPE_MISMATCH')
             directory = self.safe_path(self.config['index_root'], key)
-            manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
+            manifest = snapshot[0] if snapshot is not None else json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
             if manifest['owner'] != owner or manifest['course'] != course or manifest['version'] != key.split('/')[-1]:
                 raise ValueError('INDEX_SCOPE_MISMATCH')
             if manifest['contract'] != self.contract():
                 raise ValueError('MODEL_CONTRACT_MISMATCH')
-            if hashlib.sha256((directory / 'index.faiss').read_bytes()).hexdigest() != manifest['sha256']:
+            index_bytes = snapshot[1] if snapshot is not None else (directory / 'index.faiss').read_bytes()
+            if snapshot is None and hashlib.sha256(index_bytes).hexdigest() != manifest['sha256']:
                 raise ValueError('INDEX_INTEGRITY_FAILED')
             model = self.load(); value = 'query: ' + query
             if len(model.tokenizer(value, truncation=False)['input_ids']) > model.max_seq_length:
                 raise ValueError('QUERY_EXCEEDS_MODEL_LIMIT')
-            index = faiss.read_index(str(directory / 'index.faiss'))
+            cache_key = (key, manifest['sha256'], tuple(manifest['ids']))
+            index, candidate_ids = self.cached_search_index(
+                cache_key, lambda: (faiss.deserialize_index(np.frombuffer(index_bytes, dtype='uint8')), manifest['ids']))
             if index.d != self.contract()['dimension'] or index.ntotal != len(manifest['ids']):
                 raise ValueError('INDEX_CONTRACT_MISMATCH')
-            candidate_ids = manifest['ids']
             if allowed_chunk_ids is not None:
-                if any(not re.fullmatch(r'[a-f0-9]{64}', chunk_id) for chunk_id in allowed_chunk_ids):
+                if any(not re.fullmatch(r'(?:[a-f0-9]{64}|[1-9][0-9]{0,19})', chunk_id) for chunk_id in allowed_chunk_ids):
                     raise ValueError('INVALID_CHUNK_SCOPE')
                 allowed = set(allowed_chunk_ids)
                 positions_in_scope = [i for i, chunk_id in enumerate(candidate_ids) if chunk_id in allowed]
@@ -227,12 +255,30 @@ class Pipeline:
                 if len(positions_in_scope) > 100000:
                     raise ValueError('VECTOR_SCOPE_TOO_LARGE')
                 # Search the permitted vectors BEFORE top-k; no persisted contract/index changes.
-                scoped = faiss.IndexFlatIP(index.d)
-                scoped.add(np.stack([index.reconstruct(i) for i in positions_in_scope]).astype('float32'))
-                candidate_ids = [candidate_ids[i] for i in positions_in_scope]
-                index = scoped
-            vector = model.encode([value], normalize_embeddings=True, convert_to_numpy=True).astype('float32')
+                if len(positions_in_scope) != index.ntotal:
+                    scope_key = (cache_key, tuple(positions_in_scope))
+                    def build_scoped():
+                        scoped = faiss.IndexFlatIP(index.d)
+                        scoped.add(np.stack([index.reconstruct(i) for i in positions_in_scope]).astype('float32'))
+                        return scoped, [candidate_ids[i] for i in positions_in_scope]
+                    index, candidate_ids = self.cached_search_index(scope_key, build_scoped)
+            if timings is not None:
+                timings['indexAndScopeMs'] += (time.perf_counter() - began) * 1000
+            began = time.perf_counter()
+            query_key = (self.config['model'], self.config['revision'], value)
+            vector = self.query_vectors.get(query_key)
+            if vector is None:
+                vector = model.encode([value], normalize_embeddings=True, convert_to_numpy=True).astype('float32')
+                self.query_vectors[query_key] = vector
+                if len(self.query_vectors) > 128:
+                    self.query_vectors.popitem(last=False)
+            self.query_vectors.move_to_end(query_key)
+            if timings is not None:
+                timings['embeddingMs'] += (time.perf_counter() - began) * 1000
+            began = time.perf_counter()
             scores, positions = index.search(vector, min(index.ntotal, limit * 8))
+            if timings is not None:
+                timings['faissMs'] += (time.perf_counter() - began) * 1000
             results = []; seen = set()
             for score, position in zip(scores[0], positions[0]):
                 if position < 0:
@@ -243,6 +289,47 @@ class Pipeline:
                 if len(results) == limit:
                     break
             return {'version': manifest['version'], 'candidates': results}
+
+    def search_many(self, owner, course, key, queries, limit, allowed_chunk_ids=None):
+        if not 1 <= len(queries) <= 8 or any(not isinstance(query, str) or not query.strip() for query in queries):
+            raise ValueError('INVALID_QUERY_BATCH')
+        with self.lock:
+            if not key.startswith(f'{owner}/{course}/'):
+                raise ValueError('SCOPE_MISMATCH')
+            scope_started = time.perf_counter()
+            directory = self.safe_path(self.config['index_root'], key)
+            manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
+            if manifest['owner'] != owner or manifest['course'] != course or manifest['version'] != key.split('/')[-1]:
+                raise ValueError('INDEX_SCOPE_MISMATCH')
+            index_bytes = (directory / 'index.faiss').read_bytes()
+            if hashlib.sha256(index_bytes).hexdigest() != manifest['sha256']:
+                raise ValueError('INDEX_INTEGRITY_FAILED')
+            scope_ms = (time.perf_counter() - scope_started) * 1000
+            began = time.perf_counter()
+            model = self.load()
+            if manifest['contract'] != self.contract():
+                raise ValueError('MODEL_CONTRACT_MISMATCH')
+            missing = list(dict.fromkeys('query: ' + query for query in queries
+                if (self.config['model'], self.config['revision'], 'query: ' + query) not in self.query_vectors))
+            for value in missing:
+                if len(model.tokenizer(value, truncation=False)['input_ids']) > model.max_seq_length:
+                    raise ValueError('QUERY_EXCEEDS_MODEL_LIMIT')
+            if missing:
+                vectors = model.encode(missing, batch_size=8, normalize_embeddings=True,
+                                       convert_to_numpy=True, show_progress_bar=False).astype('float32')
+                for value, vector in zip(missing, vectors):
+                    query_key = (self.config['model'], self.config['revision'], value)
+                    self.query_vectors[query_key] = vector.reshape(1, -1)
+                    if len(self.query_vectors) > 128:
+                        self.query_vectors.popitem(last=False)
+            timings = {'embeddingMs': (time.perf_counter() - began) * 1000,
+                       'indexAndScopeMs': scope_ms, 'faissMs': 0.0}
+            results = [self.search(owner, course, key, query, limit, allowed_chunk_ids, timings,
+                                   (manifest, index_bytes)) for query in queries]
+            if len({result['version'] for result in results}) != 1:
+                raise ValueError('INDEX_VERSION_CHANGED')
+            return {'version': results[0]['version'], 'rankings': [result['candidates'] for result in results],
+                    'timings': {name: round(value, 3) for name, value in timings.items()}}
 
     def purge(self, owner, course, document, keep_index_key):
         with self.lock:

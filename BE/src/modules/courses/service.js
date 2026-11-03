@@ -1,7 +1,8 @@
 import { AppError } from '../../shared/AppError.js';
-export const courseDto = row => ({ id: String(row.id), name: row.name, description: row.description, readyDocumentCount: Number(row.ready_count ?? 0), createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString() });
+export const courseDto = row => ({ id: String(row.id), name: row.name, description: row.description, readyDocumentCount: Number(row.ready_count ?? 0), createdAt: row.created_at.toISOString(), updatedAt: row.updated_at?.toISOString()??null });
 export function courseService(repository) {
   return {
+    remove: (owner,id) => repository.remove(owner,id),
     async get(owner, id) {
       const row = await repository.get(owner, id);
       if (!row) throw new AppError(404, 'COURSE_NOT_FOUND', 'Không tìm thấy môn học.');

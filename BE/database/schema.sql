@@ -1,310 +1,235 @@
--- Vietnamese schema v1: MySQL8 / InnoDB. Fresh development database only.
-
+-- ERD 16 bảng / 124 cột / 21 khóa ngoại. Chỉ khởi tạo database mới.
+-- Giá trị nghiệp vụ bằng tiếng Việt; định danh kỹ thuật giữ nguyên.
 SET NAMES utf8mb4;
 
 CREATE TABLE `nguoi_dung` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ho_ten` varchar(100) NOT NULL,
-  `email` varchar(254) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  `mat_khau_bam` varchar(60) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
-  `khoa_anh_dai_dien` varchar(255) DEFAULT NULL,
-  `vai_tro` enum('student','admin') NOT NULL DEFAULT 'student',
-  `trang_thai` enum('active','blocked') NOT NULL DEFAULT 'active',
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `ngay_cap_nhat` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_users_email` (`email`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `phien_dang_nhap` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_nguoi_dung` bigint unsigned NOT NULL,
-  `ma_bam_token` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `token_chong_csrf` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `luc_het_han` datetime(3) NOT NULL,
-  `luc_thu_hoi` datetime(3) DEFAULT NULL,
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_sessions_token_hash` (`ma_bam_token`),
-  KEY `ix_sessions_user` (`ma_nguoi_dung`),
-  KEY `ix_sessions_expiry` (`luc_het_han`),
-  CONSTRAINT `fk_session_user` FOREIGN KEY (`ma_nguoi_dung`) REFERENCES `nguoi_dung` (`ma`)
+  `ma_nguoi_dung` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ho_ten` VARCHAR(150) NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `mat_khau` VARCHAR(255) NOT NULL,
+  `anh_dai_dien` VARCHAR(500) NULL,
+  `vai_tro` ENUM('học sinh','quản trị viên') NOT NULL DEFAULT 'học sinh',
+  `trang_thai` ENUM('hoạt động','bị khóa') NOT NULL DEFAULT 'hoạt động',
+  `ngay_tao` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ma_nguoi_dung`),
+  UNIQUE KEY `duy_nhat_nguoi_dung_1` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `mon_hoc` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_nguoi_dung` bigint unsigned NOT NULL,
-  `ten` varchar(150) NOT NULL,
-  `mo_ta` varchar(2000) NOT NULL DEFAULT '',
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `ngay_cap_nhat` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_courses_owner` (`ma`,`ma_nguoi_dung`),
-  KEY `ix_courses_user_name` (`ma_nguoi_dung`,`ten`),
-  CONSTRAINT `fk_courses_user` FOREIGN KEY (`ma_nguoi_dung`) REFERENCES `nguoi_dung` (`ma`)
+  `ma_mon_hoc` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_nguoi_dung` BIGINT UNSIGNED NOT NULL,
+  `ten_mon_hoc` VARCHAR(200) NOT NULL,
+  `mo_ta` TEXT NOT NULL,
+  `ngay_tao` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ma_mon_hoc`),
+  CONSTRAINT `khoa_mon_hoc_1` FOREIGN KEY (`ma_nguoi_dung`) REFERENCES `nguoi_dung` (`ma_nguoi_dung`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `tai_lieu` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_mon_hoc` bigint unsigned NOT NULL,
-  `ma_nguoi_dung` bigint unsigned NOT NULL,
-  `ten_tep_goc` varchar(255) NOT NULL,
-  `khoa_luu_tru` char(40) NOT NULL,
-  `kieu_tep` varchar(100) NOT NULL DEFAULT 'application/pdf',
-  `kich_thuoc_byte` bigint unsigned NOT NULL,
-  `ma_bam_sha256` char(64) NOT NULL,
-  `so_trang` int unsigned DEFAULT NULL,
-  `trang_thai` enum('queued','extracting','chunking','embedding','indexing','ready','failed','unsupported','deleting','deleted') NOT NULL DEFAULT 'queued',
-  `luc_trich_xuat_xong` datetime(3) DEFAULT NULL,
-  `khoa_trich_xuat` varchar(90) DEFAULT NULL,
-  `ma_loi` varchar(64) DEFAULT NULL,
-  `thong_bao_loi` varchar(255) DEFAULT NULL,
-  `luc_xoa` datetime(3) DEFAULT NULL,
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `ngay_cap_nhat` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  `ma_tep_dam_may` varchar(255) DEFAULT NULL,
-  `loai_tep_dam_may` enum('raw','image') DEFAULT NULL,
-  UNIQUE KEY `uq_tai_lieu_cloud` (`ma_tep_dam_may`),
-  CONSTRAINT `ck_tai_lieu_cloud_pair` CHECK ((`ma_tep_dam_may` IS NULL AND `loai_tep_dam_may` IS NULL) OR (`ma_tep_dam_may` IS NOT NULL AND `loai_tep_dam_may` IS NOT NULL)),
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_documents_storage` (`khoa_luu_tru`),
-  KEY `ix_documents_owner_course` (`ma_nguoi_dung`,`ma_mon_hoc`,`ngay_tao`),
-  KEY `fk_documents_course_owner` (`ma_mon_hoc`,`ma_nguoi_dung`),
-  KEY `ix_dashboard_documents` (`ngay_tao`,`ma`),
-  CONSTRAINT `fk_documents_course_owner` FOREIGN KEY (`ma_mon_hoc`, `ma_nguoi_dung`) REFERENCES `mon_hoc` (`ma`, `ma_nguoi_dung`)
+  `ma_tai_lieu` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_mon_hoc` BIGINT UNSIGNED NOT NULL,
+  `ten_tai_lieu` VARCHAR(255) NOT NULL,
+  `dinh_danh_dam_may` VARCHAR(500) NULL,
+  `ma_bam_tap_tin` CHAR(64) NOT NULL,
+  `so_trang` INT UNSIGNED NULL,
+  `cau_hinh_xu_ly` JSON NOT NULL,
+  `trang_thai` VARCHAR(30) NOT NULL DEFAULT 'đã tải lên',
+  `noi_dung_tom_tat` LONGTEXT NULL,
+  `ngay_tai_len` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `ngay_xu_ly` DATETIME NULL,
+  `ngay_xoa` DATETIME NULL,
+  PRIMARY KEY (`ma_tai_lieu`),
+  KEY `chi_muc_tai_lieu_1` (`ma_mon_hoc`,`ma_bam_tap_tin`),
+  CONSTRAINT `khoa_tai_lieu_1` FOREIGN KEY (`ma_mon_hoc`) REFERENCES `mon_hoc` (`ma_mon_hoc`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_tai_lieu_1` CHECK (`trang_thai` IN ('đã tải lên','đang xử lý','sẵn sàng','thất bại','đang xóa','đã xóa','không hỗ trợ')),
+  CONSTRAINT `kiem_tra_tai_lieu_2` CHECK (`so_trang` IS NULL OR `so_trang` >= 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `van_ban_pdf` (
-  `ma_tai_lieu` bigint unsigned NOT NULL,
-  `du_lieu_trich_xuat` longtext NOT NULL,
-  PRIMARY KEY (`ma_tai_lieu`),
-  CONSTRAINT `fk_extraction_document` FOREIGN KEY (`ma_tai_lieu`) REFERENCES `tai_lieu` (`ma`) ON DELETE CASCADE
+CREATE TABLE `bieu_dien_noi_dung` (
+  `ma_bieu_dien` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_dinh_danh` CHAR(64) NOT NULL,
+  `ten_mo_hinh` VARCHAR(100) NOT NULL,
+  `dinh_danh_chi_muc` VARCHAR(255) NOT NULL,
+  `ma_trong_chi_muc` BIGINT UNSIGNED NOT NULL,
+  `ngay_tao` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ma_bieu_dien`),
+  KEY `chi_muc_bieu_dien_noi_dung_1` (`ma_dinh_danh`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `doan_tai_lieu` (
-  `ma` char(64) NOT NULL,
-  `ma_tai_lieu` bigint unsigned NOT NULL,
-  `thu_tu_doan` int unsigned NOT NULL,
-  `noi_dung` mediumtext NOT NULL,
-  `tu_trang` int unsigned NOT NULL,
-  `den_trang` int unsigned NOT NULL,
-  `so_token` int unsigned NOT NULL,
-  `vi_tri_dau` int unsigned NOT NULL,
-  `vi_tri_cuoi` int unsigned NOT NULL,
-  `anh_xa_trang` json NOT NULL,
-  `mo_hinh_embedding` varchar(200) NOT NULL,
-  `phien_ban_embedding` char(40) NOT NULL,
-  `khoa_vector` varchar(200) DEFAULT NULL,
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_chunk_document_order` (`ma_tai_lieu`,`thu_tu_doan`),
-  CONSTRAINT `fk_chunk_document` FOREIGN KEY (`ma_tai_lieu`) REFERENCES `tai_lieu` (`ma`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `chi_muc_tim_kiem` (
-  `ma_mon_hoc` bigint unsigned NOT NULL,
-  `ma_nguoi_dung` bigint unsigned NOT NULL,
-  `phien_ban` char(64) NOT NULL,
-  `mo_hinh` varchar(200) NOT NULL,
-  `phien_ban_mo_hinh` char(40) NOT NULL,
-  `so_chieu` int unsigned NOT NULL,
-  `phep_do` varchar(20) NOT NULL,
-  `khoa_manifest` varchar(200) NOT NULL,
-  `ngay_cap_nhat` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`ma_mon_hoc`),
-  KEY `fk_index_course_owner` (`ma_mon_hoc`,`ma_nguoi_dung`),
-  CONSTRAINT `fk_index_course_owner` FOREIGN KEY (`ma_mon_hoc`, `ma_nguoi_dung`) REFERENCES `mon_hoc` (`ma`, `ma_nguoi_dung`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `tac_vu_pdf` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_tai_lieu` bigint unsigned NOT NULL,
-  `loai_tac_vu` enum('upload_pdf','extract_pdf','prepare_source','delete_pdf') NOT NULL,
-  `trang_thai` enum('queued','running','completed','failed') NOT NULL DEFAULT 'queued',
-  `so_lan_thu` int unsigned NOT NULL DEFAULT '0',
-  `ma_tien_trinh_khoa` char(36) DEFAULT NULL,
-  `khoa_den_luc` datetime(3) DEFAULT NULL,
-  `luc_chay_tiep` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `loi_gan_nhat` varchar(64) DEFAULT NULL,
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `ngay_cap_nhat` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_processing_document_type` (`ma_tai_lieu`,`loai_tac_vu`),
-  KEY `ix_processing_claim` (`trang_thai`,`luc_chay_tiep`,`khoa_den_luc`),
-  CONSTRAINT `fk_processing_document` FOREIGN KEY (`ma_tai_lieu`) REFERENCES `tai_lieu` (`ma`)
+  `ma_doan_tai_lieu` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_tai_lieu` BIGINT UNSIGNED NOT NULL,
+  `ma_vec_to` BIGINT UNSIGNED NULL,
+  `thu_tu_doan` INT UNSIGNED NOT NULL,
+  `noi_dung` LONGTEXT NOT NULL,
+  `ma_bam_doan` CHAR(64) NOT NULL,
+  `trang_bat_dau` INT UNSIGNED NOT NULL,
+  `trang_ket_thuc` INT UNSIGNED NOT NULL,
+  `vi_tri_tren_trang` JSON NOT NULL,
+  `ngay_tao` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ma_doan_tai_lieu`),
+  UNIQUE KEY `duy_nhat_doan_tai_lieu_1` (`ma_tai_lieu`,`thu_tu_doan`),
+  KEY `chi_muc_doan_tai_lieu_1` (`ma_bam_doan`),
+  CONSTRAINT `khoa_doan_tai_lieu_1` FOREIGN KEY (`ma_tai_lieu`) REFERENCES `tai_lieu` (`ma_tai_lieu`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `khoa_doan_tai_lieu_2` FOREIGN KEY (`ma_vec_to`) REFERENCES `bieu_dien_noi_dung` (`ma_bieu_dien`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_doan_tai_lieu_1` CHECK (`trang_bat_dau` >= 1 AND `trang_ket_thuc` >= `trang_bat_dau`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `hoi_thoai` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_mon_hoc` bigint unsigned NOT NULL,
-  `ma_nguoi_dung` bigint unsigned NOT NULL,
-  `tieu_de` varchar(150) NOT NULL DEFAULT 'Há»™i thoáº¡i má»›i',
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `ngay_cap_nhat` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`ma`),
-  KEY `fk_conversation_owner` (`ma_mon_hoc`,`ma_nguoi_dung`),
-  CONSTRAINT `fk_conversation_owner` FOREIGN KEY (`ma_mon_hoc`, `ma_nguoi_dung`) REFERENCES `mon_hoc` (`ma`, `ma_nguoi_dung`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `tin_nhan` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_hoi_thoai` bigint unsigned NOT NULL,
-  `ma_yeu_cau` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `ma_bam_dau_vao` char(64) NOT NULL,
-  `vai_tro` enum('user','assistant') NOT NULL,
-  `noi_dung` mediumtext NOT NULL,
-  `trang_thai` enum('processing','answered','insufficient_context','failed') NOT NULL,
-  `ma_loi` varchar(80) DEFAULT NULL,
-  `ma_trang_thai_loi` smallint unsigned DEFAULT NULL,
-  `mo_hinh` varchar(200) DEFAULT NULL,
-  `do_tre_ms` int unsigned DEFAULT NULL,
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `nguon_tra_loi` enum('grounded','general','unknown') NOT NULL DEFAULT 'unknown',
-  `cac_khoi_tra_loi` json DEFAULT NULL,
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_qa_request` (`ma_hoi_thoai`,`ma_yeu_cau`,`vai_tro`),
-  KEY `ix_qa_created` (`ngay_tao`),
-  KEY `ix_dashboard_qa` (`vai_tro`,`ngay_tao`,`trang_thai`,`do_tre_ms`),
-  CONSTRAINT `fk_message_conversation` FOREIGN KEY (`ma_hoi_thoai`) REFERENCES `hoi_thoai` (`ma`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `nguon_tra_loi` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_tin_nhan` bigint unsigned NOT NULL,
-  `ma_doan` char(64) DEFAULT NULL,
-  `ma_tai_lieu` bigint unsigned DEFAULT NULL,
-  `ten_tep_nguon` varchar(255) NOT NULL,
-  `tu_trang` int unsigned NOT NULL,
-  `den_trang` int unsigned NOT NULL,
-  `noi_dung_nguon_chup_lai` mediumtext NOT NULL,
-  `diem` double NOT NULL,
-  PRIMARY KEY (`ma`),
-  KEY `fk_citation_message` (`ma_tin_nhan`),
-  KEY `fk_citation_chunk` (`ma_doan`),
-  KEY `fk_citation_document` (`ma_tai_lieu`),
-  CONSTRAINT `fk_citation_chunk` FOREIGN KEY (`ma_doan`) REFERENCES `doan_tai_lieu` (`ma`) ON DELETE SET NULL,
-  CONSTRAINT `fk_citation_document` FOREIGN KEY (`ma_tai_lieu`) REFERENCES `tai_lieu` (`ma`) ON DELETE SET NULL,
-  CONSTRAINT `fk_citation_message` FOREIGN KEY (`ma_tin_nhan`) REFERENCES `tin_nhan` (`ma`) ON DELETE CASCADE
+  `ma_hoi_thoai` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_mon_hoc` BIGINT UNSIGNED NOT NULL,
+  `tieu_de` VARCHAR(255) NOT NULL,
+  `ngay_tao` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `ngay_cap_nhat` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ma_hoi_thoai`),
+  CONSTRAINT `khoa_hoi_thoai_1` FOREIGN KEY (`ma_mon_hoc`) REFERENCES `mon_hoc` (`ma_mon_hoc`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `luot_hoi_dap` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_nguoi_dung` bigint unsigned NOT NULL,
-  `luc_tinh_luot` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `ma_tin_nhan_cu` bigint unsigned DEFAULT NULL,
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_usage_legacy` (`ma_tin_nhan_cu`),
-  KEY `ix_usage_owner_time` (`ma_nguoi_dung`,`luc_tinh_luot`),
-  CONSTRAINT `fk_usage_user` FOREIGN KEY (`ma_nguoi_dung`) REFERENCES `nguoi_dung` (`ma`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `bo_hoc_tap` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_mon_hoc` bigint unsigned NOT NULL,
-  `ma_nguoi_dung` bigint unsigned NOT NULL,
-  `loai` enum('quiz','flashcards') NOT NULL,
-  `tieu_de` varchar(150) NOT NULL,
-  `mo_hinh` varchar(200) NOT NULL,
-  `so_nguon` int unsigned NOT NULL,
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`ma`),
-  KEY `ix_learning_owner` (`ma_nguoi_dung`,`ma_mon_hoc`,`ma`),
-  KEY `fk_learning_owner` (`ma_mon_hoc`,`ma_nguoi_dung`),
-  CONSTRAINT `fk_learning_owner` FOREIGN KEY (`ma_mon_hoc`, `ma_nguoi_dung`) REFERENCES `mon_hoc` (`ma`, `ma_nguoi_dung`)
+  `ma_luot_hoi_dap` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_hoi_thoai` BIGINT UNSIGNED NOT NULL,
+  `cau_hoi` LONGTEXT NOT NULL,
+  `cau_hoi_truy_hoi` LONGTEXT NULL,
+  `noi_dung_tra_loi` LONGTEXT NULL,
+  `mo_hinh_llm` VARCHAR(100) NULL,
+  `ket_qua_kiem_chung` ENUM('chưa kiểm chứng','đạt','không đạt','không đủ ngữ cảnh') NOT NULL DEFAULT 'chưa kiểm chứng',
+  `trang_thai` VARCHAR(30) NOT NULL DEFAULT 'đang xử lý',
+  `thoi_diem_hoi` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `thoi_diem_tra_loi` DATETIME NULL,
+  PRIMARY KEY (`ma_luot_hoi_dap`),
+  CONSTRAINT `khoa_luot_hoi_dap_1` FOREIGN KEY (`ma_hoi_thoai`) REFERENCES `hoi_thoai` (`ma_hoi_thoai`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_luot_hoi_dap_1` CHECK (`trang_thai` IN ('đang xử lý','đã trả lời','không đủ ngữ cảnh','thất bại'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `muc_hoc_tap` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_bo_hoc` bigint unsigned NOT NULL,
-  `vi_tri` int unsigned NOT NULL,
-  `cau_hoi_hoac_mat_truoc` text NOT NULL,
-  `dap_an_hoac_mat_sau` text NOT NULL,
-  `cac_lua_chon` json DEFAULT NULL,
-  `vi_tri_dap_an_dung` tinyint unsigned DEFAULT NULL,
-  `giai_thich` text,
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_learning_position` (`ma_bo_hoc`,`vi_tri`),
-  CONSTRAINT `fk_learning_item_set` FOREIGN KEY (`ma_bo_hoc`) REFERENCES `bo_hoc_tap` (`ma`) ON DELETE CASCADE,
-  CONSTRAINT `ck_learning_correct` CHECK (((`vi_tri_dap_an_dung` is null) or (`vi_tri_dap_an_dung` < 4)))
+CREATE TABLE `pham_vi_hoi_dap` (
+  `ma_luot_hoi_dap` BIGINT UNSIGNED NOT NULL,
+  `ma_tai_lieu` BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (`ma_luot_hoi_dap`,`ma_tai_lieu`),
+  CONSTRAINT `khoa_pham_vi_hoi_dap_1` FOREIGN KEY (`ma_luot_hoi_dap`) REFERENCES `luot_hoi_dap` (`ma_luot_hoi_dap`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `khoa_pham_vi_hoi_dap_2` FOREIGN KEY (`ma_tai_lieu`) REFERENCES `tai_lieu` (`ma_tai_lieu`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `nguon_hoc_tap` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_noi_dung` bigint unsigned NOT NULL,
-  `ma_doan` char(64) DEFAULT NULL,
-  `ma_tai_lieu` bigint unsigned DEFAULT NULL,
-  `ten_tep_nguon` varchar(255) NOT NULL,
-  `tu_trang` int unsigned NOT NULL,
-  `den_trang` int unsigned NOT NULL,
-  `noi_dung_nguon_chup_lai` mediumtext NOT NULL,
-  PRIMARY KEY (`ma`),
-  KEY `fk_learning_citation_item` (`ma_noi_dung`),
-  KEY `fk_learning_citation_chunk` (`ma_doan`),
-  KEY `fk_learning_citation_document` (`ma_tai_lieu`),
-  CONSTRAINT `fk_learning_citation_chunk` FOREIGN KEY (`ma_doan`) REFERENCES `doan_tai_lieu` (`ma`) ON DELETE SET NULL,
-  CONSTRAINT `fk_learning_citation_document` FOREIGN KEY (`ma_tai_lieu`) REFERENCES `tai_lieu` (`ma`) ON DELETE SET NULL,
-  CONSTRAINT `fk_learning_citation_item` FOREIGN KEY (`ma_noi_dung`) REFERENCES `muc_hoc_tap` (`ma`) ON DELETE CASCADE
+CREATE TABLE `ngu_canh_hoi_dap` (
+  `ma_ngu_canh` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_luot_hoi_dap` BIGINT UNSIGNED NOT NULL,
+  `ma_doan_tai_lieu` BIGINT UNSIGNED NOT NULL,
+  `diem_tuong_dong` DECIMAL(8,6) NOT NULL,
+  `thu_hang` INT UNSIGNED NOT NULL,
+  `thu_tu_trich_dan` INT UNSIGNED NULL,
+  `noi_dung_ngu_canh` LONGTEXT NOT NULL,
+  `thong_tin_nguon` JSON NOT NULL,
+  `vi_tri_trich_dan` JSON NULL,
+  PRIMARY KEY (`ma_ngu_canh`),
+  CONSTRAINT `khoa_ngu_canh_hoi_dap_1` FOREIGN KEY (`ma_luot_hoi_dap`) REFERENCES `luot_hoi_dap` (`ma_luot_hoi_dap`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `khoa_ngu_canh_hoi_dap_2` FOREIGN KEY (`ma_doan_tai_lieu`) REFERENCES `doan_tai_lieu` (`ma_doan_tai_lieu`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_ngu_canh_hoi_dap_1` CHECK (`diem_tuong_dong` BETWEEN -1 AND 1),
+  CONSTRAINT `kiem_tra_ngu_canh_hoi_dap_2` CHECK (`thu_hang` >= 1 AND (`thu_tu_trich_dan` IS NULL OR `thu_tu_trich_dan` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `yeu_cau_tao_bo` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_nguoi_dung` bigint unsigned NOT NULL,
-  `ma_mon_hoc` bigint unsigned NOT NULL,
-  `ma_yeu_cau` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `ma_bam_dau_vao` char(64) NOT NULL,
-  `tinh_trang` enum('processing','completed','failed') NOT NULL,
-  `ma_bo_hoc` bigint unsigned DEFAULT NULL,
-  `ma_loi` varchar(80) DEFAULT NULL,
-  `ma_trang_thai_loi` smallint unsigned DEFAULT NULL,
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_learning_generation` (`ma_nguoi_dung`,`ma_yeu_cau`),
-  KEY `ix_learning_quota` (`ma_nguoi_dung`,`ngay_tao`),
-  KEY `fk_learning_generation_owner` (`ma_mon_hoc`,`ma_nguoi_dung`),
-  KEY `fk_learning_generation_set` (`ma_bo_hoc`),
-  CONSTRAINT `fk_learning_generation_owner` FOREIGN KEY (`ma_mon_hoc`, `ma_nguoi_dung`) REFERENCES `mon_hoc` (`ma`, `ma_nguoi_dung`),
-  CONSTRAINT `fk_learning_generation_set` FOREIGN KEY (`ma_bo_hoc`) REFERENCES `bo_hoc_tap` (`ma`) ON DELETE SET NULL
+CREATE TABLE `bai_on_tap` (
+  `ma_bai_on_tap` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_mon_hoc` BIGINT UNSIGNED NOT NULL,
+  `ten_bai_on_tap` VARCHAR(255) NOT NULL,
+  `loai_bai` ENUM('trắc nghiệm','thẻ ghi nhớ') NOT NULL,
+  `nguon_tao` ENUM('trí tuệ nhân tạo','thủ công','quy tắc') NOT NULL,
+  `mo_hinh_tao` VARCHAR(100) NULL,
+  `cau_hinh_tao` JSON NOT NULL,
+  `trang_thai` VARCHAR(20) NOT NULL DEFAULT 'sẵn sàng',
+  `ngay_tao` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ma_bai_on_tap`),
+  CONSTRAINT `khoa_bai_on_tap_1` FOREIGN KEY (`ma_mon_hoc`) REFERENCES `mon_hoc` (`ma_mon_hoc`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_bai_on_tap_1` CHECK (`trang_thai` IN ('đang tạo','sẵn sàng','thất bại','đã lưu trữ'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `cau_hoi_on_tap` (
+  `ma_cau_hoi` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_bai_on_tap` BIGINT UNSIGNED NOT NULL,
+  `thu_tu` INT UNSIGNED NOT NULL,
+  `noi_dung_cau_hoi` TEXT NOT NULL,
+  `phuong_an` JSON NULL,
+  `dap_an` TEXT NOT NULL,
+  `giai_thich` TEXT NULL,
+  `nguon_tham_khao` JSON NULL,
+  PRIMARY KEY (`ma_cau_hoi`),
+  UNIQUE KEY `duy_nhat_cau_hoi_on_tap_1` (`ma_bai_on_tap`,`thu_tu`),
+  CONSTRAINT `khoa_cau_hoi_on_tap_1` FOREIGN KEY (`ma_bai_on_tap`) REFERENCES `bai_on_tap` (`ma_bai_on_tap`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `lan_lam_bai` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_bo_hoc` bigint unsigned NOT NULL,
-  `ma_nguoi_dung` bigint unsigned NOT NULL,
-  `ma_yeu_cau` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `diem` decimal(5,2) DEFAULT NULL,
-  `so_cau_dung` int unsigned DEFAULT NULL,
-  `tong_so_cau` int unsigned NOT NULL,
-  `ma_bam_bai_nop` char(64) DEFAULT NULL,
-  `luc_bat_dau` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `luc_hoan_thanh` datetime(3) DEFAULT NULL,
-  PRIMARY KEY (`ma`),
-  UNIQUE KEY `uq_learning_attempt` (`ma_nguoi_dung`,`ma_yeu_cau`),
-  KEY `fk_learning_attempt_set` (`ma_bo_hoc`),
-  CONSTRAINT `fk_learning_attempt_set` FOREIGN KEY (`ma_bo_hoc`) REFERENCES `bo_hoc_tap` (`ma`) ON DELETE CASCADE,
-  CONSTRAINT `fk_learning_attempt_user` FOREIGN KEY (`ma_nguoi_dung`) REFERENCES `nguoi_dung` (`ma`)
+  `ma_lan_lam_bai` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_bai_on_tap` BIGINT UNSIGNED NOT NULL,
+  `ma_nguoi_dung` BIGINT UNSIGNED NOT NULL,
+  `trang_thai` VARCHAR(20) NOT NULL DEFAULT 'đang làm',
+  `diem` DECIMAL(5,2) NULL,
+  `bat_dau_luc` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `hoan_thanh_luc` DATETIME NULL,
+  PRIMARY KEY (`ma_lan_lam_bai`),
+  CONSTRAINT `khoa_lan_lam_bai_1` FOREIGN KEY (`ma_bai_on_tap`) REFERENCES `bai_on_tap` (`ma_bai_on_tap`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `khoa_lan_lam_bai_2` FOREIGN KEY (`ma_nguoi_dung`) REFERENCES `nguoi_dung` (`ma_nguoi_dung`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_lan_lam_bai_1` CHECK (`trang_thai` IN ('đang làm','hoàn thành')),
+  CONSTRAINT `kiem_tra_lan_lam_bai_2` CHECK (`diem` IS NULL OR `diem` BETWEEN 0 AND 100)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `dap_an_da_chon` (
-  `ma_lan_lam` bigint unsigned NOT NULL,
-  `ma_noi_dung` bigint unsigned NOT NULL,
-  `lua_chon` tinyint unsigned DEFAULT NULL,
-  `dung_sai` tinyint(1) NOT NULL,
-  PRIMARY KEY (`ma_lan_lam`,`ma_noi_dung`),
-  KEY `fk_learning_answer_item` (`ma_noi_dung`),
-  CONSTRAINT `fk_learning_answer_attempt` FOREIGN KEY (`ma_lan_lam`) REFERENCES `lan_lam_bai` (`ma`) ON DELETE CASCADE,
-  CONSTRAINT `fk_learning_answer_item` FOREIGN KEY (`ma_noi_dung`) REFERENCES `muc_hoc_tap` (`ma`) ON DELETE CASCADE
+CREATE TABLE `chi_tiet_lam_bai` (
+  `ma_lan_lam_bai` BIGINT UNSIGNED NOT NULL,
+  `ma_cau_hoi` BIGINT UNSIGNED NOT NULL,
+  `tra_loi_nguoi_dung` TEXT NULL,
+  `tra_loi_dung` BOOLEAN NULL,
+  `muc_do_ghi_nho` VARCHAR(20) NULL,
+  `thoi_diem_tra_loi` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ma_lan_lam_bai`,`ma_cau_hoi`),
+  CONSTRAINT `khoa_chi_tiet_lam_bai_1` FOREIGN KEY (`ma_lan_lam_bai`) REFERENCES `lan_lam_bai` (`ma_lan_lam_bai`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `khoa_chi_tiet_lam_bai_2` FOREIGN KEY (`ma_cau_hoi`) REFERENCES `cau_hoi_on_tap` (`ma_cau_hoi`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_chi_tiet_lam_bai_1` CHECK (`muc_do_ghi_nho` IS NULL OR `muc_do_ghi_nho` IN ('học lại','khó','tốt','dễ'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `nhat_ky_quan_tri` (
-  `ma` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `ma_nguoi_thuc_hien` bigint unsigned NOT NULL,
-  `hanh_dong` varchar(80) NOT NULL,
-  `loai_doi_tuong` varchar(40) NOT NULL,
-  `ma_doi_tuong` bigint unsigned NOT NULL,
-  `du_lieu_bo_sung` json NOT NULL,
-  `ngay_tao` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`ma`),
-  KEY `ix_audit_entity` (`loai_doi_tuong`,`ma_doi_tuong`,`ngay_tao`),
-  KEY `fk_audit_actor` (`ma_nguoi_thuc_hien`),
-  KEY `ix_dashboard_audit` (`ngay_tao`,`ma`),
-  CONSTRAINT `fk_audit_actor` FOREIGN KEY (`ma_nguoi_thuc_hien`) REFERENCES `nguoi_dung` (`ma`)
+CREATE TABLE `ke_hoach_hoc` (
+  `ma_ke_hoach` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_nguoi_dung` BIGINT UNSIGNED NOT NULL,
+  `ma_mon_hoc` BIGINT UNSIGNED NOT NULL,
+  `ten_ke_hoach` VARCHAR(255) NOT NULL,
+  `muc_tieu` TEXT NOT NULL,
+  `ngay_bat_dau` DATE NOT NULL,
+  `ngay_ket_thuc` DATE NOT NULL,
+  `so_buoi_mong_muon` INT UNSIGNED NOT NULL,
+  `dieu_kien_hoc` JSON NOT NULL,
+  `trang_thai` VARCHAR(20) NOT NULL DEFAULT 'đã xác nhận',
+  `ngay_tao` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`ma_ke_hoach`),
+  CONSTRAINT `khoa_ke_hoach_hoc_1` FOREIGN KEY (`ma_nguoi_dung`) REFERENCES `nguoi_dung` (`ma_nguoi_dung`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `khoa_ke_hoach_hoc_2` FOREIGN KEY (`ma_mon_hoc`) REFERENCES `mon_hoc` (`ma_mon_hoc`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_ke_hoach_hoc_1` CHECK (`ngay_ket_thuc` >= `ngay_bat_dau` AND `so_buoi_mong_muon` >= 1),
+  CONSTRAINT `kiem_tra_ke_hoach_hoc_2` CHECK (`trang_thai` IN ('đã xác nhận','hoàn thành','đã hủy'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `buoi_hoc` (
+  `ma_buoi_hoc` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `ma_ke_hoach` BIGINT UNSIGNED NOT NULL,
+  `ma_tai_lieu` BIGINT UNSIGNED NOT NULL,
+  `tieu_de` VARCHAR(255) NOT NULL,
+  `noi_dung_can_hoc` TEXT NOT NULL,
+  `bat_dau_luc` DATETIME NOT NULL,
+  `ket_thuc_luc` DATETIME NOT NULL,
+  `nhac_truoc_phut` INT UNSIGNED NULL,
+  `trang_thai` VARCHAR(20) NOT NULL DEFAULT 'đã lên lịch',
+  `dinh_danh_su_kien_google` VARCHAR(255) NULL,
+  PRIMARY KEY (`ma_buoi_hoc`),
+  KEY `chi_muc_buoi_hoc_1` (`bat_dau_luc`,`ket_thuc_luc`),
+  CONSTRAINT `khoa_buoi_hoc_1` FOREIGN KEY (`ma_ke_hoach`) REFERENCES `ke_hoach_hoc` (`ma_ke_hoach`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `khoa_buoi_hoc_2` FOREIGN KEY (`ma_tai_lieu`) REFERENCES `tai_lieu` (`ma_tai_lieu`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_buoi_hoc_1` CHECK (`ket_thuc_luc` > `bat_dau_luc`),
+  CONSTRAINT `kiem_tra_buoi_hoc_2` CHECK (`trang_thai` IN ('đã lên lịch','hoàn thành','đã hủy'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `ket_noi_google` (
+  `ma_nguoi_dung` BIGINT UNSIGNED NOT NULL,
+  `dinh_danh_google` VARCHAR(255) NOT NULL,
+  `email_google` VARCHAR(255) NOT NULL,
+  `refresh_token_ma_hoa` TEXT NULL,
+  `trang_thai` VARCHAR(20) NOT NULL DEFAULT 'chưa kết nối',
+  `ngay_ket_noi` DATETIME NULL,
+  PRIMARY KEY (`ma_nguoi_dung`),
+  UNIQUE KEY `duy_nhat_ket_noi_google_1` (`dinh_danh_google`),
+  CONSTRAINT `khoa_ket_noi_google_1` FOREIGN KEY (`ma_nguoi_dung`) REFERENCES `nguoi_dung` (`ma_nguoi_dung`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `kiem_tra_ket_noi_google_1` CHECK (`trang_thai` IN ('chưa kết nối','đã kết nối','đã ngắt kết nối','cần kết nối lại'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

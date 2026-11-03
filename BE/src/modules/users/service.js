@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import { createHash, randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { AppError } from '../../shared/AppError.js';
-import { userDto } from '../auth/service.js';
+import { userDto } from './dto.js';
 const allowed = { jpeg: { mime: 'image/jpeg', extensions: ['.jpg', '.jpeg'] }, png: { mime: 'image/png', extensions: ['.png'] }, webp: { mime: 'image/webp', extensions: ['.webp'] } };
 export function userService(repository, config) {
   return {

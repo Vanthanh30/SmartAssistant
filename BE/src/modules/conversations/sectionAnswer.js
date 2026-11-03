@@ -1,6 +1,6 @@
 import { cleanDocumentText, formatPassage } from './documentAnswer.js';
 
-const fold = text => text.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').toLowerCase();
+const fold = text => text.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
 const stop = new Set('co bao nhieu nhung cac loai nao va neu ten tung la gi cua trong cho toi hay gom liet ke chuc nang trinh bay'.split(' '));
 
 // Recover complete numbered sections across overlapping chunks, without inventing items.

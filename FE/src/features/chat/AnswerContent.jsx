@@ -1,5 +1,6 @@
+import { StoredFormulaImage } from './StoredFormulaImage.jsx';
 import { lazy, Suspense, useState, useCallback } from "react";
-import { answerBlocks } from "./answerBlocks.js";
+import { answerBlocks, readableParagraphs, normalizeAnswerLists } from "./answerBlocks.js";
 import { formulaGroups } from "./formulaGroups.js";
 const FormulaImage = lazy(() =>
   import("./FormulaImage.jsx").then((module) => ({
@@ -13,7 +14,7 @@ export function AnswerContent({ content, blocks, citations = [], onCitation }) {
   const onCropReady = useCallback((key, ready) => setReadyCrops(previous =>
     previous[key] === ready ? previous : { ...previous, [key]: ready }), []);
   const onRegion=useCallback((id,region)=>setRegions(previous=>JSON.stringify(previous[id])===JSON.stringify(region)?previous:{...previous,[id]:region}),[]);
-  const ordered =
+  const ordered = normalizeAnswerLists(
     blocks ||
     answerBlocks(content).map((block, index) => {
       const anchor = block.text || block.items?.join("\n") || "";
@@ -31,7 +32,7 @@ export function AnswerContent({ content, blocks, citations = [], onCitation }) {
           ? { source: { ...citation, anchor, prefix: "", suffix: "" } }
           : {}),
       };
-    });
+    }));
   const groups = formulaGroups(ordered, regions);
   return (
     <div className="answer-content">
@@ -65,6 +66,7 @@ export function AnswerContent({ content, blocks, citations = [], onCitation }) {
             </div>
           );
         if (block.type === "formula_image") {
+          if(block.imagePath)return <StoredFormulaImage key={block.id} block={block} onOpen={onCitation} citation={{...citations.find(c=>c.documentId===block.source?.documentId),pageFrom:block.source?.pageFrom,pageTo:block.source?.pageTo}}/>;
           const citation =
             block.source &&
             citations.find(
@@ -104,14 +106,16 @@ export function AnswerContent({ content, blocks, citations = [], onCitation }) {
             </Suspense>
           );
         }
-        if (block.type === "list")
+        if (block.type === "list") {
+          const List = block.ordered ? 'ol' : 'ul';
           return (
-            <ul key={block.id}>
+            <List key={block.id} start={block.ordered ? block.start : undefined}>
               {block.items.map((item, index) => (
                 <li key={index}>{item}</li>
               ))}
-            </ul>
+            </List>
           );
+        }
         if (block.type === "heading" || block.heading)
           return <h4 key={block.id}>{block.text}</h4>;
         if (block.type === "formula_text")
@@ -120,7 +124,9 @@ export function AnswerContent({ content, blocks, citations = [], onCitation }) {
               {block.text}
             </div>
           );
-        return <p key={block.id}>{block.text}</p>;
+        return readableParagraphs(block.text || '').map((paragraph, index) => (
+          <p key={`${block.id}-${index}`}>{paragraph}</p>
+        ));
       })}
     </div>
   );

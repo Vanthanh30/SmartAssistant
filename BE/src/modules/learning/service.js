@@ -1,193 +1,463 @@
+import { sessionPracticeScope } from './sessionScope.js';
+import { setDto } from './mapper.js';
+import { learningRepository } from './repository.js';
+import { toDb, fromDb } from '../shared/values.js';
+import { learningAi } from './aiService.js';
 import { createHash } from 'node:crypto';
 import { AppError } from '../../shared/AppError.js';
-import { learningProvider } from './provider.js';
-import { learningRepository } from './repository.js';
+import { studyAssistantRepository, atomic, json, missing } from '../shared/repository.js';
+import { assertActiveActor } from '../auth/service.js';
+import { learningFingerprint, withLearningLock } from './reuse.js';
 import { itemEvidencePage } from './evidencePage.js';
+import { mapRetrievedSource } from '../../rag/documentRetrieval.js';
+import { withOwnerLock } from '../studyCalendar/locks.js';
+const requestId = (owner, request, kind) =>
+  BigInt(
+    '0x' +
+      createHash('sha256').update(`erd16:${kind}:${owner}:${request}`).digest('hex').slice(0, 15),
+  ).toString();
 
-const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const missing = () => new AppError(404,'LEARNING_NOT_FOUND','Không tìm thấy bộ học hoặc lần làm bài.');
-const setDto = row => ({ id: String(row.id), courseId: String(row.course_id), kind: row.kind, title: row.title,
-  model: row.model, sourceCount: row.source_count, itemCount: Number(row.item_count), createdAt: row.created_at });
-async function transaction(pool, work) {
-  const db = await pool.getConnection();
-  try { await db.beginTransaction(); const result = await work(db); await db.commit(); return result; }
-  catch (error) { await db.rollback(); throw error; } finally { db.release(); }
-}
-async function active(db, actor) {
-  const [rows] = await learningRepository(db).actor([actor.user.id]);
-  if (rows[0]?.status !== 'active' || rows[0]?.role !== 'student') throw new AppError(403,'ACCOUNT_BLOCKED','Tài khoản không còn được phép sử dụng.');
-  const [sessions] = await learningRepository(db).session([actor.user.id,actor.csrfToken]);
-  if (!sessions.length) throw new AppError(401,'SESSION_EXPIRED','Phiên đã hết hạn. Vui lòng đăng nhập lại.');
-}
-async function ownCourse(db, owner, courseId) {
-  const [rows] = await learningRepository(db).course([courseId,owner]);
-  if (!rows.length) throw missing();
-}
-async function ownSet(db, owner, id, lock = false) {
-  const [rows] = await learningRepository(db).set([id,owner],lock);
-  if (!rows.length) throw missing();
-  return rows[0];
-}
-async function verify(db, owner, courseId, sources, lock = false) {
-  for (const source of [...sources].sort((a,b) => a.documentId.localeCompare(b.documentId) || a.chunkId.localeCompare(b.chunkId))) {
-    const [rows] = await learningRepository(db).verifySource([source.chunkId,source.documentId,owner,courseId],lock);
-    if (!rows.length) throw new AppError(409,'SOURCE_CHANGED','Nguồn không còn sẵn sàng. Hãy chọn lại tài liệu.');
-  }
-}
-export function learningService(pool, config) {
-  const generate = learningProvider();
-  async function detail(owner, id, reveal = false, db = pool) {
-    if (db === pool) return transaction(pool,connection => detail(owner,id,reveal,connection));
-    const set = await ownSet(db,owner,id);
-    const [items] = await learningRepository(db).items([id]);
-    const [citations] = await learningRepository(db).citations([id]);
-    const ids = set.kind === 'quiz' && !reveal ? [] : [...new Set(citations.filter(c => c.chunk_id && c.document_id && c.document_status === 'ready' && !c.deleted_at).map(c => c.chunk_id))];
-    const [chunks] = ids.length ? await learningRepository(db).citationChunks(ids,owner,set.course_id) : [[]];
-    const chunkMap = new Map(chunks.map(chunk => [String(chunk.chunkId),chunk]));
-    const pagesFor = (citation,item) => {
-      const source = chunkMap.get(String(citation.chunk_id));
-      return source && String(source.documentId) === String(citation.document_id)
-        ? itemEvidencePage(source,item,set.kind) : null;
+export function learningService(pool, config, { generate } = {}) {
+  const repo = studyAssistantRepository(pool);
+  async function detail(owner, id, revealed = new Set(), db = pool) {
+    const r = studyAssistantRepository(db),
+      set = await r.set(owner, id),
+      items = await r.items(id);
+    return {
+      ...setDto(
+        {
+          ...set,
+          source_count: new Set(
+            items
+              .flatMap((i) => (json(i.nguon_tham_khao)?.sources || []).map((s) => s.ma_doan_goc))
+              .filter(Boolean),
+          ).size,
+        },
+        items.length,
+      ),
+      items: await Promise.all(
+        items.map(async (i) => {
+          const allowed = set.loai_bai === 'thẻ ghi nhớ' || revealed.has(String(i.ma_cau_hoi)),
+            sources = json(i.nguon_tham_khao)?.sources || [];
+          const citations = allowed
+            ? await Promise.all(
+                sources.map(async (s) => {
+                  let unavailable = true;
+                  try {
+                    await r.document(owner, String(s.ma_tai_lieu_goc), true);
+                    const [chunks] = await learningRepository.findCitationChunk(db, [
+                      s.ma_doan_goc,
+                      s.ma_tai_lieu_goc,
+                    ]);
+                    unavailable = !chunks.length;
+                  } catch {
+                    /* snapshots remain available */
+                  }
+                  return {
+                    chunkId: s.ma_doan_goc,
+                    documentId: String(s.ma_tai_lieu_goc),
+                    fileName: s.ten_tep,
+                    pageFrom: s.tu_trang,
+                    pageTo: s.den_trang,
+                    excerpt: s.doan_trich,
+                    sourceDeleted: unavailable,
+                  };
+                }),
+              )
+            : [];
+          return {
+            id: String(i.ma_cau_hoi),
+            position: i.thu_tu,
+            prompt: i.noi_dung_cau_hoi,
+            ...(set.loai_bai === 'trắc nghiệm'
+              ? {
+                  choices: json(i.phuong_an).map((v) => v.content),
+                  ...(allowed
+                    ? {
+                        correctIndex: json(i.phuong_an).findIndex((v) => v.symbol === i.dap_an),
+                        explanation: i.giai_thich,
+                      }
+                    : {}),
+                }
+              : { answer: i.dap_an }),
+            citations,
+          };
+        }),
+      ),
     };
-    return { ...setDto(set), items: items.map(item => ({ id: String(item.id), position: item.position, prompt: item.prompt,
-      ...(set.kind === 'quiz' ? { choices: typeof item.choices === 'string' ? JSON.parse(item.choices) : item.choices } : { answer: item.answer }),
-      ...(reveal && set.kind === 'quiz' ? { correctIndex: item.correct_index, explanation: item.explanation } : {}),
-      // A quiz's evidence/explanation is disclosed only after server grading.
-      citations: set.kind === 'quiz' && !reveal ? [] : citations.filter(c => String(c.item_id) === String(item.id)).map(c => ({
-        chunkId: c.chunk_id, documentId: c.document_id ? String(c.document_id) : null, fileName: c.file_name,
-        pageFrom: c.page_from, pageTo: c.page_to, excerpt: c.excerpt,
-        ...pagesFor(c,item),
-        sourceDeleted: !c.chunk_id || !c.document_id || c.document_status !== 'ready' || !!c.deleted_at,
-      })),
-    })) };
   }
   async function attemptDetail(owner, id, db = pool) {
-    if (db === pool) return transaction(pool,connection => attemptDetail(owner,id,connection));
-    const [rows] = await learningRepository(db).attempt([id,owner]);
-    if (!rows.length) throw missing();
-    const row = rows[0];
-    const [answers] = await learningRepository(db).answers([id]);
-    return { id: String(row.id), setId: String(row.set_id), startedAt: row.started_at, completedAt: row.completed_at,
-      score: row.score === null ? null : Number(row.score), correctCount: row.correct_count, totalQuestions: row.total_questions,
-      answers: answers.map(a => ({ itemId: String(a.item_id), choice: a.choice, correct: !!a.is_correct })),
-      set: await detail(owner,row.set_id,!!row.completed_at,db) };
+    const r = studyAssistantRepository(db),
+      a = await r.attempt(owner, id),
+      [answers] = await learningRepository.attemptAnswers(db, [id]);
+    const set = await detail(
+      owner,
+      String(a.ma_bai_on_tap),
+      new Set(answers.map((v) => String(v.ma_cau_hoi))),
+      db,
+    );
+    return {
+      id: String(a.ma_lan_lam_bai),
+      setId: String(a.ma_bai_on_tap),
+      startedAt: a.bat_dau_luc,
+      completedAt: a.hoan_thanh_luc,
+      score: a.diem == null ? null : Number(a.diem),
+      correctCount: answers.filter((v) => v.tra_loi_dung === 1).length,
+      totalQuestions: set.items.length,
+      answers: answers.map((v) => ({
+        itemId: String(v.ma_cau_hoi),
+        choice: v.tra_loi_nguoi_dung == null ? null : 'ABCD'.indexOf(v.tra_loi_nguoi_dung),
+        correct: v.tra_loi_dung == null ? null : !!v.tra_loi_dung,
+        memory: fromDb(v.muc_do_ghi_nho),
+        locked: true,
+      })),
+      set,
+    };
+  }
+  async function saveAnswer(db, owner, attemptId, input) {
+    const r = studyAssistantRepository(db),
+      a = await r.attempt(owner, attemptId, true);
+    const [itemRows] = await learningRepository.findItem(db, [input.itemId, a.ma_bai_on_tap]);
+    const item = itemRows[0];
+    if (!item) throw missing();
+    const set = await r.set(owner, String(a.ma_bai_on_tap)),
+      isQuiz = set.loai_bai === 'trắc nghiệm';
+    const choices = json(item.phuong_an),
+      symbol = isQuiz ? (input.choice == null ? null : choices[input.choice]?.symbol) : null;
+    if ((isQuiz && !Object.hasOwn(input, 'choice')) || (!isQuiz && Object.hasOwn(input, 'choice')))
+      throw new AppError(422, 'INVALID_ANSWER_KIND', 'Dữ liệu trả lời không đúng hình thức bài.');
+    if (isQuiz && input.choice != null && !symbol)
+      throw new AppError(422, 'INVALID_CHOICE', 'Phương án không thuộc câu hỏi.');
+    if (!isQuiz && !['again', 'hard', 'good', 'easy'].includes(input.memory))
+      throw new AppError(422, 'INVALID_MEMORY', 'Chọn mức ghi nhớ hợp lệ.');
+    const [prior] = await learningRepository.findAnswer(db, [attemptId, input.itemId]);
+    if (prior.length) {
+      if (
+        prior[0].tra_loi_nguoi_dung !== symbol ||
+        (!isQuiz && prior[0].muc_do_ghi_nho !== toDb(input.memory))
+      )
+        throw new AppError(409, 'ANSWER_LOCKED', 'Câu đã xác nhận, không thể thay đổi.');
+      return;
+    }
+    if (a.trang_thai === 'hoàn thành')
+      throw new AppError(409, 'ATTEMPT_COMPLETED', 'Lần làm đã hoàn thành.');
+    await learningRepository.insertAnswer(db, [
+      attemptId,
+      input.itemId,
+      symbol,
+      isQuiz ? symbol === item.dap_an : null,
+      isQuiz ? null : toDb(input.memory),
+    ]);
   }
   return {
-    detail, attemptDetail,
-    async list(owner, courseId, filters) {
-      return transaction(pool,async db => {
-        await ownCourse(db,owner,courseId);
-        const [count] = await learningRepository(db).countSets([courseId,owner]);
-        const [rows] = await learningRepository(db).listSets([courseId,owner,filters.pageSize,(filters.page-1)*filters.pageSize]);
-        return { data: rows.map(setDto), meta: { ...filters, total: Number(count[0].total) } };
-      });
+    detail,
+    attemptDetail,
+    async list(owner, course, filters) {
+      await repo.course(owner, course);
+      const [[count]] = await learningRepository.countSets(pool, [course]);
+      const [rows] = await learningRepository.listSets(pool, [
+        course,
+        filters.pageSize,
+        (filters.page - 1) * filters.pageSize,
+      ]);
+      return {
+        data: rows.map((b) => setDto(b, Number(b.n))),
+        meta: { ...filters, total: Number(count.n) },
+      };
     },
-    async create(actor, courseId, input) {
-      const owner = actor.user.id;
-      const payloadHash = hash({ ...input, courseId, documentIds: [...input.documentIds].sort() });
-      // Reserve in a short transaction. The journal survives deleting a set and process crashes.
-      const reserved = await transaction(pool,async db => {
-        await active(db,actor); await ownCourse(db,owner,courseId);
-        const [existing] = await learningRepository(db).generation([owner,input.requestId]);
-        if (existing.length) {
-          const row = existing[0];
-          if (row.payload_hash !== payloadHash) throw new AppError(409,'REQUEST_CONFLICT','RequestId đã dùng với dữ liệu khác.');
-          if (row.state === 'completed') { if (!row.set_id) throw missing(); return { setId: String(row.set_id) }; }
-          if (row.state === 'failed') throw new AppError(row.error_status || 502,row.error_code || 'GENERATION_FAILED','Lần tạo này đã thất bại. Chọn tạo lượt mới để thử lại.');
-          throw new AppError(409,'GENERATION_PROCESSING','Lần tạo đang xử lý hoặc đã bị gián đoạn. Không tự tạo lại; kiểm tra danh sách hoặc chủ động tạo lượt mới.');
-        }
-        const [documents] = await learningRepository(db).readyDocuments([...input.documentIds,owner,courseId]);
-        if (documents.length !== input.documentIds.length) throw new AppError(422,'INVALID_DOCUMENTS','Chỉ chọn tài liệu sẵn sàng trong môn học của bạn.');
-        const [counts] = await learningRepository(db).chunkCounts(input.documentIds);
-        if (counts.length !== input.documentIds.length) throw new AppError(422,'INSUFFICIENT_SOURCE','Một tài liệu chưa có trích đoạn.');
-        const [usage] = await learningRepository(db).dailyUsage([owner]);
-        if (Number(usage[0].total) >= config.LEARNING_DAILY_LIMIT) throw new AppError(429,'LEARNING_DAILY_LIMIT','Đã hết hạn mức tạo bộ học hôm nay (UTC).');
-        const [recent] = await learningRepository(db).recentUsage([owner]);
-        if (Number(recent[0].total) >= 3) throw new AppError(429,'LEARNING_RATE_LIMIT','Tối đa 3 lượt tạo mỗi phút.');
-        const [result] = await learningRepository(db).reserveGeneration([owner,courseId,input.requestId,payloadHash]);
-        return { requestId: String(result.insertId) };
-      });
-      if (reserved.setId) return detail(owner,reserved.setId);
-      let savedId;
-      try {
-        // Seeded samples across document page/order strata, with a bounded text payload.
-        const sources = [];
-        const perDocument = [];
-        for (const documentId of input.documentIds) {
-          const [rows] = await learningRepository(pool).sampleChunks([documentId,owner,courseId,input.requestId]);
-          perDocument.push(rows.map(r => ({ ...r, documentId: String(r.documentId) })));
-        }
-        for (let i=0;i<32;i++) for (const rows of perDocument) if (rows[i]) sources.push(rows[i]);
-        if (!sources.length) throw new AppError(422,'INSUFFICIENT_SOURCE','Không còn trích đoạn khả dụng.');
-        const generated = await generate(input,sources,selected => verify(pool,owner,courseId,selected));
-        savedId = await transaction(pool,async db => {
-          await active(db,actor); await verify(db,owner,courseId,generated.sources,true);
-          const [created] = await learningRepository(db).insertSet([courseId,owner,input.kind,input.title || (input.kind === 'quiz' ? 'Quiz ôn tập từ tài liệu' : 'Flashcard ôn tập từ tài liệu'),generated.model,generated.sources.length]);
-          const id = String(created.insertId);
-          for (const [position,item] of generated.items.entries()) {
-            const [entry] = await learningRepository(db).insertItem([id,position+1,item.prompt,input.kind === 'quiz' ? item.choices[item.correctIndex] : item.answer,input.kind === 'quiz' ? JSON.stringify(item.choices) : null,item.correctIndex ?? null,item.explanation ?? null]);
-            for (const chunkId of item.citedChunkIds) {
-              const source = generated.sources.find(s => s.chunkId === chunkId);
-              const page = itemEvidencePage(source,item,input.kind) || source;
-              await learningRepository(db).insertCitation([String(entry.insertId),source.chunkId,source.documentId,source.fileName,page.pageFrom,page.pageTo,source.content]);
-            }
-          }
-          await learningRepository(db).completeGeneration([id,reserved.requestId]);
-          return id;
-        });
-      } catch (error) {
-        await learningRepository(pool).failGeneration([error.code || 'GENERATION_FAILED',error.status || 500,reserved.requestId])
-          .catch(() => console.error(JSON.stringify({ code: 'LEARNING_JOURNAL_UPDATE_FAILED', requestId: input.requestId })));
-        throw error;
+    async create(actor, course, input) {
+      await repo.course(actor.user.id, course);
+      const mode = input.generationMode || 'ai';
+      if (mode !== 'ai')
+        throw new AppError(
+          422,
+          'INVALID_GENERATION_MODE',
+          'Chỉ hỗ trợ tạo bộ học kết hợp từ tài liệu.',
+        );
+      const id = requestId(actor.user.id, input.requestId, 'set');
+      const hash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
+      const [existing] = await learningRepository.findOwnedSet(pool, [id, actor.user.id]);
+      if (existing.length) {
+        if (json(existing[0].cau_hinh_tao).requestHash !== hash)
+          throw new AppError(409, 'REQUEST_CONFLICT', 'Mã yêu cầu đã dùng với nội dung khác.');
+        return detail(actor.user.id, id);
       }
-      return detail(owner,savedId);
-    },
-    async remove(actor, id) {
-      await transaction(pool,async db => { await active(db,actor); await ownSet(db,actor.user.id,id,true); await learningRepository(db).deleteSet([id]); });
-      return { deleted: true };
+      const title =
+        input.title ||
+        (input.kind === 'quiz' ? 'Trắc nghiệm ôn tập từ tài liệu' : 'Thẻ ghi nhớ ôn tập');
+      let generated;
+      async function loadSources(db) {
+        const repo = studyAssistantRepository(db);
+        const sources = [],
+          documents = [];
+        const lessonResources = await sessionPracticeScope(repo, actor.user.id, course, input);
+        if (!input.documentIds?.length)
+          throw new AppError(422, 'DOCUMENT_REQUIRED', 'Chọn tài liệu nguồn.');
+        for (const docId of [...input.documentIds].sort()) {
+          const doc = await repo.document(actor.user.id, docId, true);
+          if (String(doc.ma_mon_hoc) !== String(course)) throw missing();
+          documents.push([String(doc.ma_tai_lieu), doc.ma_bam_tap_tin, doc.so_trang]);
+          const ranges = lessonResources?.filter((r) => r.documentId === docId);
+          const from = ranges?.length
+              ? Math.min(...ranges.map((r) => r.pageFrom))
+              : input.pageFrom || 1,
+            to = ranges?.length
+              ? Math.max(...ranges.map((r) => r.pageTo))
+              : input.pageTo || doc.so_trang;
+          if (from < 1 || to < from || to > doc.so_trang)
+            throw new AppError(422, 'INVALID_PAGES', 'Khoảng trang không hợp lệ.');
+          const chunks = await repo.chunks(actor.user.id, docId, from, to);
+          if (chunks.length > 128)
+            throw new AppError(
+              422,
+              'LEARNING_SCOPE_TOO_LARGE',
+              'Tài liệu quá lớn cho một bộ học. Hãy chọn khoảng trang nhỏ hơn.',
+            );
+          for (const ch of chunks) {
+            const matched = ranges?.filter(
+              (r) => !r.chunkIds || r.chunkIds.includes(String(ch.ma_doan_tai_lieu)),
+            );
+            if (ranges && !matched.length) continue;
+            const source = mapRetrievedSource({ ...ch, ten_tai_lieu: doc.ten_tai_lieu }),
+              position = json(ch.vi_tri_tren_trang),
+              pages = position.pageMap.filter(
+                (p) =>
+                  p.page >= from &&
+                  p.page <= to &&
+                  (!matched || matched.some((r) => p.page >= r.pageFrom && p.page <= r.pageTo)),
+              );
+            if (!pages.length) continue;
+            const begin = Math.max(position.sourceStart, Math.min(...pages.map((p) => p.start))),
+              end = Math.min(
+                position.sourceStart + ch.noi_dung.length,
+                Math.max(...pages.map((p) => p.end)),
+              );
+            sources.push({
+              ...source,
+              content: ch.noi_dung.slice(begin - position.sourceStart, end - position.sourceStart),
+              sourceStart: begin,
+              pageMap: pages,
+              pageFrom: Math.max(from, ch.trang_bat_dau),
+              pageTo: Math.min(to, ch.trang_ket_thuc),
+            });
+          }
+        }
+        return { sources, documents };
+      }
+      const snapshot = await loadSources(pool),
+        sources = snapshot.sources;
+      const fingerprint = learningFingerprint(input, snapshot, config);
+      if (!sources.length)
+        throw new AppError(422, 'INSUFFICIENT_SOURCE', 'Chưa đủ nội dung nguồn.');
+      if (sources.reduce((length, source) => length + source.content.length, 0) > 128000)
+        throw new AppError(
+          422,
+          'LEARNING_SCOPE_TOO_LARGE',
+          'Nội dung vượt giới hạn một bộ học. Hãy chọn khoảng trang nhỏ hơn.',
+        );
+      return withLearningLock(pool, actor.user.id, fingerprint, async () => {
+        if (!input.forceNew) {
+          const cached = await atomic(pool, async (db) => {
+            await assertActiveActor(db, config, actor, 'student');
+            const current = await loadSources(db);
+            if (learningFingerprint(input, current, config) !== fingerprint)
+              throw new AppError(
+                409,
+                'SOURCE_CHANGED',
+                'Tài liệu đã thay đổi, hãy tạo lại bộ học.',
+              );
+            const [rows] = await learningRepository.findReusable(db, [
+              course,
+              actor.user.id,
+              fingerprint,
+            ]);
+            return rows[0]?.ma_bai_on_tap;
+          });
+          if (cached) return detail(actor.user.id, String(cached));
+        }
+        generated = await (generate || learningAi(config))(input, sources, async (retained) => {
+          if (retained.some((s) => !sources.some((p) => p.chunkId === s.chunkId)))
+            throw new AppError(502, 'INVALID_CITATION', 'Nguồn không thuộc phần đã chọn.');
+        });
+        if (generated.items.length !== input.count)
+          throw new AppError(422, 'INSUFFICIENT_SOURCE', 'Tài liệu chưa đủ số câu yêu cầu.');
+        const settings = {
+          schemaVersion: 16,
+          pipeline: 'hybrid-learning-v1',
+          reuseFingerprint: fingerprint,
+          verified: true,
+          requestHash: hash,
+          requestId: input.requestId,
+          documentIds: input.documentIds || [],
+          sessionId: input.sessionId,
+          topic: input.topic,
+          topics: input.topics,
+          pageFrom: input.pageFrom,
+          pageTo: input.pageTo,
+          count: generated.items.length,
+        };
+        return withOwnerLock(pool, actor.user.id, async (db) => {
+          await db.beginTransaction();
+          try {
+            await assertActiveActor(db, config, actor, 'student');
+            await studyAssistantRepository(db).course(actor.user.id, course);
+            const current = await loadSources(db);
+            if (learningFingerprint(input, current, config) !== fingerprint)
+              throw new AppError(
+                409,
+                'SOURCE_CHANGED',
+                'Tài liệu đã thay đổi trong lúc tạo bộ học; kết quả không được lưu.',
+              );
+            const [dupe] = await learningRepository.findSet(db, [id]);
+            if (dupe.length)
+              throw new AppError(
+                409,
+                'REQUEST_IN_PROGRESS',
+                'Bộ học đã được tạo đồng thời, tải lại.',
+              );
+            await learningRepository.insertSet(db, [
+              id,
+              course,
+              title,
+              toDb(input.kind),
+              toDb(mode),
+              generated.model,
+              JSON.stringify(settings),
+            ]);
+            for (const [index, item] of generated.items.entries()) {
+              const snapshots = [];
+              for (const cited of item.citedChunkIds) {
+                const source = sources.find((s) => s.chunkId === cited);
+                if (!source) throw new AppError(502, 'INVALID_CITATION', 'Nguồn không hợp lệ.');
+                const page = itemEvidencePage(source, item, input.kind) || source;
+                snapshots.push({
+                  ma_doan_goc: source.chunkId,
+                  ma_tai_lieu_goc: source.documentId,
+                  ten_tep: source.fileName,
+                  tu_trang: page.pageFrom,
+                  den_trang: page.pageTo,
+                  doan_trich: source.content,
+                });
+              }
+              if (!snapshots.length)
+                throw new AppError(502, 'INVALID_CITATION', 'Câu hỏi cần nguồn.');
+              const quiz = input.kind === 'quiz';
+              if (
+                quiz &&
+                (!Array.isArray(item.choices) ||
+                  item.choices.length !== 4 ||
+                  !Number.isInteger(item.correctIndex) ||
+                  item.correctIndex < 0 ||
+                  item.correctIndex > 3)
+              )
+                throw new AppError(
+                  502,
+                  'INVALID_GENERATED_QUIZ',
+                  'Bốn phương án hoặc đáp án chưa hợp lệ.',
+                );
+              await learningRepository.insertItem(db, [
+                id,
+                index + 1,
+                item.prompt,
+                quiz
+                  ? JSON.stringify(
+                      item.choices.map((content, n) => ({ symbol: 'ABCD'[n], content })),
+                    )
+                  : null,
+                quiz ? 'ABCD'[item.correctIndex] : item.answer,
+                item.explanation || null,
+                JSON.stringify({ schemaVersion: 16, sources: snapshots }),
+              ]);
+            }
+            await db.commit();
+            return detail(actor.user.id, id);
+          } catch (e) {
+            await db.rollback();
+            throw e;
+          }
+        });
+      });
     },
     async start(actor, id, input) {
-      const attemptId = await transaction(pool,async db => {
-        await active(db,actor);
-        const set = await ownSet(db,actor.user.id,id,true);
-        if (set.kind !== 'quiz') throw new AppError(422,'NOT_A_QUIZ','Bộ này là flashcard.');
-        const [existing] = await learningRepository(db).attemptRequest([actor.user.id,input.requestId]);
-        if (existing.length) { if (String(existing[0].set_id) !== String(id)) throw new AppError(409,'REQUEST_CONFLICT','RequestId đã dùng cho bộ khác.'); return String(existing[0].id); }
-        const [result] = await learningRepository(db).insertAttempt([id,actor.user.id,input.requestId,set.item_count]);
-        return String(result.insertId);
+      const attemptId = requestId(actor.user.id, input.requestId, 'attempt');
+      await atomic(pool, async (db) => {
+        await assertActiveActor(db, config, actor, 'student');
+        await studyAssistantRepository(db).set(actor.user.id, id, true);
+        const [existing] = await learningRepository.findAttempt(db, [attemptId]);
+        if (existing.length) {
+          if (
+            String(existing[0].ma_bai_on_tap) !== String(id) ||
+            String(existing[0].ma_nguoi_dung) !== actor.user.id
+          )
+            throw new AppError(409, 'REQUEST_CONFLICT', 'Mã yêu cầu đã sử dụng.');
+          return;
+        }
+        await learningRepository.insertAttempt(db, [attemptId, id, actor.user.id]);
       });
-      return attemptDetail(actor.user.id,attemptId);
+      return attemptDetail(actor.user.id, attemptId);
     },
-    async attempts(owner, id) {
-      await ownSet(pool,owner,id);
-      const [rows] = await learningRepository(pool).listAttempts([id,owner]);
-      return rows.map(row => ({ id: String(row.id), score: row.score === null ? null : Number(row.score), correctCount: row.correct_count, totalQuestions: row.total_questions, startedAt: row.started_at, completedAt: row.completed_at }));
+    async confirm(actor, id, input) {
+      await atomic(pool, async (db) => {
+        await assertActiveActor(db, config, actor, 'student');
+        await saveAnswer(db, actor.user.id, id, input);
+      });
+      return attemptDetail(actor.user.id, id);
     },
     async submit(actor, id, input) {
-      const canonical = [...input.answers].sort((a,b) => a.itemId.localeCompare(b.itemId));
-      const submissionHash = hash(canonical);
-      await transaction(pool,async db => {
-        await active(db,actor);
-        // Set before attempt matches deletion's cascade lock order.
-        const [lookup] = await learningRepository(db).lookupAttempt([id,actor.user.id]);
-        if (!lookup.length) throw missing();
-        await ownSet(db,actor.user.id,lookup[0].set_id,true);
-        const [rows] = await learningRepository(db).lockAttempt([id,actor.user.id]);
-        if (!rows.length) throw missing();
-        const attempt = rows[0];
-        if (attempt.completed_at) { if (attempt.submission_hash !== submissionHash) throw new AppError(409,'ATTEMPT_COMPLETED','Bài đã nộp, không thể đổi đáp án.'); return; }
-        const [items] = await learningRepository(db).gradeItems([attempt.set_id]);
-        const map = new Map(canonical.map(a => [a.itemId,a.choice]));
-        if (map.size !== canonical.length || map.size !== items.length || items.some(item => !map.has(String(item.id)))) throw new AppError(422,'INVALID_ANSWERS',"Gửi đúng mỗi câu một lần; câu bỏ qua có lua_chon=null.");
-        let correct = 0;
-        for (const item of items) {
-          const choice = map.get(String(item.id)); const isCorrect = choice === item.correct_index;
-          if (isCorrect) correct++;
-          await learningRepository(db).insertAnswer([id,String(item.id),choice,isCorrect]);
+      await atomic(pool, async (db) => {
+        await assertActiveActor(db, config, actor, 'student');
+        const r = studyAssistantRepository(db),
+          a = await r.attempt(actor.user.id, id, true),
+          set = await r.set(actor.user.id, String(a.ma_bai_on_tap)),
+          items = await r.items(String(a.ma_bai_on_tap));
+        if (set.loai_bai === 'trắc nghiệm') {
+          const map = new Map(input.answers.map((v) => [v.itemId, v]));
+          if (
+            map.size !== input.answers.length ||
+            map.size !== items.length ||
+            items.some((i) => !map.has(String(i.ma_cau_hoi)))
+          )
+            throw new AppError(422, 'INVALID_ANSWERS', 'Mỗi câu cần đúng một đáp án hoặc bỏ qua.');
+          for (const item of items)
+            await saveAnswer(db, actor.user.id, id, map.get(String(item.ma_cau_hoi)));
         }
-        await learningRepository(db).completeAttempt([(100*correct/items.length).toFixed(2),correct,submissionHash,id]);
+        const [answers] = await learningRepository.submittedAnswers(db, [id]);
+        if (answers.length !== items.length)
+          throw new AppError(422, 'INCOMPLETE_ATTEMPT', 'Chưa đánh giá đủ các thẻ.');
+        if (a.trang_thai !== 'hoàn thành') {
+          const score =
+            set.loai_bai === 'trắc nghiệm'
+              ? ((100 * answers.filter((v) => v.tra_loi_dung === 1).length) / items.length).toFixed(
+                  2,
+                )
+              : null;
+          await learningRepository.completeAttempt(db, [score, id]);
+        }
       });
-      return attemptDetail(actor.user.id,id);
+      return attemptDetail(actor.user.id, id);
+    },
+    async attempts(owner, id) {
+      await repo.set(owner, id);
+      const [rows] = await learningRepository.listAttempts(pool, [id, owner]);
+      return rows.map((a) => ({
+        id: String(a.ma_lan_lam_bai),
+        score: a.diem == null ? null : Number(a.diem),
+        correctCount: Number(a.correct),
+        totalQuestions: Number(a.total),
+        startedAt: a.bat_dau_luc,
+        completedAt: a.hoan_thanh_luc,
+      }));
+    },
+    async remove(actor, id) {
+      await atomic(pool, async (db) => {
+        await assertActiveActor(db, config, actor, 'student');
+        await studyAssistantRepository(db).set(actor.user.id, id, true);
+        await learningRepository.deleteAttemptDetails(db, [id, id]);
+        await learningRepository.deleteAttempts(db, [id]);
+        await learningRepository.deleteItems(db, [id]);
+        await learningRepository.deleteSet(db, [id]);
+      });
+      return { deleted: true };
     },
   };
 }

@@ -5,6 +5,7 @@ const compact = text => text.normalize('NFC').replace(/\s/gu, '');
 // Conservative allowlist: only a complete plain scalar equality is rendered as text.
 // Typography-dependent fractions, scripts, unknown glyphs and scattered symbols use source pixels.
 function kind(text) {
+  if (/[ăâđêôơư\u1EA0-\u1EF9]/iu.test(text) && !/[=≈∝∫√∑]/u.test(text)) return 'paragraph';
   const damaged = /[\uFFFD\uE000-\uF8FF]|^[=≈∝]|[=≈∝]$|[=≈∝]\s*[=≈∝]|\b\d+\s+\d+\b/.test(text);
   const symbolic = /[=≈∝∫√∑±∞α-ωΑ-Ω²³⁰-⁹₀-₉]|\b(?:[A-Za-z]\s+){2,}[A-Za-z]\b/.test(text);
   if (!symbolic && !damaged) return 'paragraph';
@@ -14,7 +15,7 @@ function kind(text) {
     && !/[Δδ^_²³⁰-⁹₀-₉]/.test(text) && !/\b[A-Za-z]\s+\d|\b\d\s+[A-Za-z]/.test(text);
   return simple && !damaged ? 'formula_text' : 'formula_image';
 }
-function sourceFor(text, sources, occurrence = 0) {
+export function sourceFor(text, sources, occurrence = 0) {
   const needle = compact(text);
   if (!needle) return null;
   const matches = [];
@@ -52,17 +53,27 @@ export function presentationBlocks(answer, sources) {
       && /[A-Za-zα-ωΑ-Ω\d=≈∝\uFFFD\uE000-\uF8FF]/.test(text);
   };
   for (const raw of rawLines) {
-    // Keep the topic label as text even when PDF extraction puts '=' on the heading line.
-    const heading=raw.match(/^((?:[a-z]|\d+)[.)]\s+[^:]+:)\s*(.*)$/u);
-    const previous=lines.at(-1);
-    if (!heading && previous?.math && fragment(raw) && !/[=≈∝]/.test(raw)) {
-      const anchor=previous.anchor+'\n'+raw;
-      if(sourceFor(anchor,sources)) { previous.text+='\n'+raw;previous.anchor=anchor;continue; }
+    const labeled=raw.match(/^(.{3,}?:)\s*(.+[=≈∝].*)$/u);
+    if(labeled&&/[ăâđêôơư\u1EA0-\u1EF9]/iu.test(labeled[1])) {
+      lines.push({text:labeled[1],anchor:labeled[1],math:false});
+      lines.push({text:labeled[2],anchor:labeled[2],math:true});
+      continue;
     }
-    if(heading && heading[2] && kind(heading[2])!=='paragraph') {
-      lines.push({text:heading[1],anchor:heading[1],heading:true,math:false});
-      lines.push({text:heading[2],anchor:raw,math:true});
-    } else lines.push({text:raw,anchor:raw,math:kind(raw)!=='paragraph'});
+    // A heading and the first '=' may be adjacent in PDF extraction order.
+    const heading = raw.match(/^((?:[a-z]|\d+)[.)]\s+[^=≈∝]+?)(\s*[=≈∝].*)$/u);
+    if (heading && /[ăâđêôơư\u1EA0-\u1EF9]/iu.test(heading[1])) {
+      lines.push({text:heading[1].trim(),anchor:heading[1].trim(),heading:true,math:false});
+      lines.push({text:heading[2].trim(),anchor:heading[2].trim(),math:true});
+      continue;
+    }
+    const math=kind(raw)!=='paragraph', previous=lines.at(-1);
+    if(previous?.math && (math || fragment(raw))) {
+      const anchor=previous.anchor+'\n'+raw;
+      if(sourceFor(anchor,sources) && !(kind(previous.text)==='formula_text' && kind(raw)==='formula_text')) {
+        previous.text+='\n'+raw;previous.anchor=anchor;continue;
+      }
+    }
+    lines.push({text:raw,anchor:raw,math});
   }
   const occurrences=new Map();const seen=new Set();const blocks=[];
   for(const [index,line] of lines.entries()) {

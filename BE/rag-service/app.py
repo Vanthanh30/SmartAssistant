@@ -1,4 +1,6 @@
 import hmac
+import logging
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryFile
@@ -37,7 +39,7 @@ class EmbeddingWindow(Payload):
 
 
 class EmbeddingChunk(Payload):
-    id: str = Field(pattern=r'^[a-f0-9]{64}$')
+    id: str = Field(pattern=r'^(?:[a-f0-9]{64}|[1-9][0-9]{0,19})$')
     windows: list[EmbeddingWindow] = Field(min_length=1, max_length=1000)
 
 
@@ -55,12 +57,19 @@ class SearchRequest(Scope):
     query: str = Field(min_length=1, max_length=10000)
     limit: int = Field(default=5, ge=1, le=20)
     allowedChunkIds: list[str] | None = Field(default=None, max_length=50000,
-        description='Optional DB-verified chunk scope, filtered before FAISS ranking. IDs must be 64 hex characters. Maximum 100000 selected vector windows; over limit returns 422, no silent truncation. Persisted index contract unchanged.')
+        description='Optional DB-verified chunk scope, filtered before FAISS ranking. IDs are legacy 64-hex or ERD15 unsigned BIGINT strings. Maximum 100000 selected vector windows; over limit returns 422, no silent truncation. Persisted index contract unchanged.')
 
 
 class PurgeRequest(Scope):
     document: str = Field(pattern=r'^[1-9][0-9]*$')
     keepIndexKey: str | None = Field(default=None, max_length=200)
+
+
+class SearchBatchRequest(Scope):
+    key: str = Field(max_length=200)
+    queries: list[str] = Field(min_length=1, max_length=8)
+    limit: int = Field(default=5, ge=1, le=20)
+    allowedChunkIds: list[str] | None = Field(default=None, max_length=50000)
 
 
 class ReconcileRequest(Scope):
@@ -107,9 +116,15 @@ class EmbedResult(Payload):
     contract: ModelContract
 
 
+class IndexPosition(Payload):
+    chunkId: str
+    position: int = Field(ge=0)
+
+
 class BuildResult(ModelContract):
     version: str
     manifestKey: str
+    positions: list[IndexPosition]
 
 
 class Candidate(Payload):
@@ -120,10 +135,17 @@ class Candidate(Payload):
 class SearchResult(Payload):
     version: str
     candidates: list[Candidate]
+    timings: dict[str, float] | None = None
 
 
 class PurgeResult(Payload):
     success: bool
+
+
+class SearchBatchResult(Payload):
+    version: str
+    rankings: list[list[Candidate]]
+    timings: dict[str, float]
 
 
 class ReconcileResult(PurgeResult):
@@ -154,6 +176,8 @@ def create_app(config=None):
     @asynccontextmanager
     async def lifespan(app):
         check_dependencies(config)
+        # Readiness includes the real model, not only import/storage checks.
+        pipeline.contract()
         yield
 
     app = FastAPI(title='Internal RAG source pipeline', docs_url=None,
@@ -187,16 +211,24 @@ def create_app(config=None):
             check_dependencies(config)
         except Exception:
             return JSONResponse({'error': 'DEPENDENCIES_NOT_READY'}, status_code=503)
+        if pipeline.model is None:
+            return JSONResponse({'error': 'MODEL_NOT_READY'}, status_code=503)
         return {'status': 'ok', 'scope': 'runtime-dependencies-storage',
                 'modelLoaded': pipeline.model is not None, 'pipelineImplemented': True}
 
     @app.exception_handler(ValueError)
     async def invalid_input(request, error):
+        logging.error('RAG input failure path=%s type=%s frames=%s', request.url.path,
+                      type(error).__name__, ''.join(traceback.format_tb(error.__traceback__)))
         return JSONResponse({'error': 'INVALID_PIPELINE_INPUT'}, status_code=422)
 
     @app.exception_handler(Exception)
     async def dependency_error(request, error):
-        return JSONResponse({'error': 'RAG_DEPENDENCY_FAILED'}, status_code=503)
+        logging.error('RAG dependency failure path=%s type=%s frames=%s', request.url.path,
+                      type(error).__name__, ''.join(traceback.format_tb(error.__traceback__)))
+        memory_error = isinstance(error, MemoryError) or isinstance(error, OSError) and (
+            getattr(error, 'winerror', None) == 1455 or 'paging file is too small' in str(error).lower())
+        return JSONResponse({'error': 'RAG_MEMORY_LIMIT' if memory_error else 'RAG_DEPENDENCY_FAILED'}, status_code=503)
 
     @app.post('/chunks', response_model=ChunkResult)
     def chunks(body: ChunkRequest):
@@ -214,7 +246,14 @@ def create_app(config=None):
 
     @app.post('/indexes/search', response_model=SearchResult)
     def search(body: SearchRequest):
-        return pipeline.search(body.owner, body.course, body.key, body.query, body.limit, body.allowedChunkIds)
+        result = pipeline.search_many(body.owner, body.course, body.key, [body.query], body.limit, body.allowedChunkIds)
+        return {'version': result['version'], 'candidates': result['rankings'][0], 'timings': result['timings']}
+
+    @app.post('/indexes/search-batch', response_model=SearchBatchResult)
+    def search_batch(body: SearchBatchRequest):
+        if any(not query.strip() or len(query) > 10000 for query in body.queries):
+            raise ValueError('INVALID_QUERY_BATCH')
+        return pipeline.search_many(body.owner, body.course, body.key, body.queries, body.limit, body.allowedChunkIds)
 
     @app.post('/documents/purge', response_model=PurgeResult)
     def purge(body: PurgeRequest):

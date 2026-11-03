@@ -29,7 +29,7 @@ export function UploadDialog({ courseId, limits, onUploaded }) {
   return <><Button variant="primary" ref={trigger} onClick={() => changeOpen(true)}><Upload size={17} aria-hidden="true"/>Tải PDF</Button>
     <Modal open={open} onOpenChange={changeOpen} title="Tải tài liệu PDF" description="Tài liệu được lưu riêng tư trong môn học của bạn.">
       <form onSubmit={submit} noValidate><p>Chỉ nhận PDF có lớp văn bản, tối đa {Math.floor(maxBytes / 1024 ** 2)} MB/file. Không hỗ trợ OCR; bảng, hình và công thức có thể trích xuất không đầy đủ.</p>
-        <p className="privacy-notice">PDF được lưu riêng tư trên Cloudinary khi dịch vụ được cấu hình. Máy chủ giữ cache phục vụ trích xuất và xem PDF. Hỏi đáp có nguồn phù hợp dùng trích đoạn tại máy chủ; khi không có nguồn phù hợp, chỉ câu hỏi được gửi tới OpenAI. Tạo quiz/flashcard vẫn gửi trích đoạn tới LLM. Email đăng ký sẽ nhận thông báo khi tài liệu sẵn sàng hoặc xử lý thất bại.</p>
+        <p className="privacy-notice">PDF được lưu riêng tư trên Cloudinary. Khi dùng trợ lý AI, câu hỏi và các trích đoạn liên quan được gửi tới mô hình để tạo câu trả lời có nguồn.</p>
         {limits && <p className="hint">Hạn mức: {limits.maxDocumentsPerCourse} tài liệu/môn; {Math.floor(limits.maxCourseBytes / 1024 ** 2)} MB/môn và {Math.floor(limits.maxUserBytes / 1024 ** 2)} MB/tài khoản.</p>}
         <label htmlFor="pdf-upload">File PDF</label><input id="pdf-upload" type="file" accept="application/pdf,.pdf" disabled={mutation.isPending} aria-describedby="pdf-upload-error" onChange={event => { setFile(event.target.files?.[0] ?? null); setError(''); mutation.reset(); }}/>
         {(error || mutation.isError) && <p id="pdf-upload-error" role="alert" className="field-error">{error || mutation.error.message}</p>}

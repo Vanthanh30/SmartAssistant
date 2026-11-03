@@ -11,19 +11,28 @@
     "start": "node src/server.js",
     "db:seed": "node scripts/seed-admin.js",
     "lint": "eslint .",
+    "test:retrieval": "node --test tests/rag/*.test.js",
+    "test:llm": "node --test tests/llm/*.test.js",
     "dev:worker": "node src/jobs/worker.js",
     "dev:rag": "node scripts/dev.js rag",
     "start:worker": "node src/jobs/worker.js",
     "start:rag": "node scripts/dev.js rag",
-    "storage:reconcile": "node scripts/reconcile-storage.js",
-    "storage:cleanup-media": "node scripts/cleanup-cloud-media.js",
     "db:create": "node scripts/create-database.js",
     "db:status": "node scripts/database-status.js",
-    "db:reset": "node scripts/reset-development-database.js",
-    "verify:database": "node scripts/verify-vietnamese-db.js",
-    "db:erd": "node scripts/export-erd.js"
+    "verify:database": "node scripts/verify-database.js",
+    "db:erd": "node scripts/export-erd.js",
+    "lint:fix": "eslint . --fix",
+    "test:contracts": "node --test tests/contracts/*.test.js",
+    "test": "node --test tests/contracts/*.test.js tests/llm/*.test.js tests/rag/*.test.js tests/modules/*.test.js",
+    "format": "node scripts/format-foundation.js --write",
+    "format:check": "node scripts/format-foundation.js --check",
+    "test:modules": "node --test tests/modules/*.test.js",
+    "test:regression": "node --test tests/modules/coverage.test.js tests/modules/service-grounding.test.js tests/contracts/*.test.js",
+    "evaluate:grounding": "node scripts/evaluate-grounding.js",
+    "smoke:readonly": "node scripts/smoke-readonly.js"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.10",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.11.0",
     "cookie-parser": "^1.4.7",
@@ -31,17 +40,21 @@
     "dotenv": "^18.0.5",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.1",
+    "google-auth-library": "^11.3.1",
     "helmet": "^8.3.0",
+    "jose": "^6.2.12",
     "multer": "^2.4.0",
     "mysql2": "^3.24.5",
     "pdfjs-dist": "6.4.299",
     "sharp": "^0.35.5",
+    "web-push": "^3.6.7",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "12.1.0",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.12.0",
-    "globals": "^17.13.0"
+    "globals": "^17.13.0",
+    "prettier": "3.9.10"
   }
 }

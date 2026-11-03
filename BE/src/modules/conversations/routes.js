@@ -1,28 +1,60 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { requireAuth, requireRole, requireOrigin, requireCsrf } from '../../middlewares/auth.js';
-import { validate } from '../../shared/validation.js';
-import { sendData } from '../../shared/AppError.js';
-import { courseIdSchema } from '../courses/schema.js';
-import { conversationService } from './service.js';
+import { requireOrigin, requireCsrf } from '../../middlewares/auth.js';
+import { validate } from '../../middlewares/validate.js';
+import { studentRateLimit } from '../../middlewares/rateLimit.js';
+import { idParams } from '../shared/idSchema.js';
+import { studentRouter } from '../shared/studentRouter.js';
+import { conversationsRequestSchemas } from './requestSchema.js';
 import { historyQuerySchema, transcriptQuerySchema } from './schema.js';
-const id = courseIdSchema.shape.courseId;
-export function conversationRoutes(pool, auth, config) {
-  const courses = Router({ mergeParams: true }); const conversations = Router(); const service = conversationService(pool, config);
-  for (const router of [courses, conversations]) router.use(requireAuth(auth, config), requireRole('student'), (req,res,next) => { res.set('Cache-Control','no-store'); next(); });
+import { sourceService } from '../documents/sourceService.js';
+import { conversationService } from './service.js';
+import { conversationController } from './controller.js';
+
+export function conversationRoutes(pool, auth, config, services = {}) {
+  const router = studentRouter(auth, config, ['/conversations', '/courses']);
+  const schemas = conversationsRequestSchemas(config);
+  const service = conversationService(pool, config);
+  const controller = conversationController(service, sourceService(pool, config));
+  const params = (key) => validate(idParams(key), 'params', 'ids');
   const mutate = [requireOrigin(config), requireCsrf];
-  const list = async(req,res) => { const result=await service.list(req.auth.user.id,{...req.filters,...(req.ids?.courseId ? {courseId:req.ids.courseId} : {})}); res.json({...result,requestId:req.requestId}); };
-  conversations.get('/',validate(historyQuerySchema,'query','filters'),list);
-  courses.get('/',validate(courseIdSchema,'params','ids'),validate(historyQuerySchema.omit({courseId:true}),'query','filters'),list);
-  courses.post('/', ...mutate, validate(courseIdSchema, 'params', 'ids'), validate(z.object({ title: z.string().trim().min(1).max(150).optional() }).strict()),
-    async (req,res) => sendData(req,res,await service.create(req.auth.user.id,req.ids.courseId,req.input),201));
-  const ids = validate(z.object({ conversationId: id }), 'params','ids');
-  conversations.get('/:conversationId', ids, validate(transcriptQuerySchema,'query','filters'), async (req,res) => sendData(req,res,await service.get(req.auth.user.id,req.ids.conversationId,req.filters)));
-  conversations.delete('/:conversationId',...mutate,ids,async(req,res) => sendData(req,res,await service.remove(req.auth.user.id,req.ids.conversationId)));
-  conversations.post('/:conversationId/questions', ...mutate, ids, validate(z.object({
-    question: z.string().transform(v => v.trim().normalize('NFC')).refine(v => [...v].length > 0 && [...v].length <= config.ASK_MAX_QUESTION_CHARS, `Câu hỏi cần 1–${config.ASK_MAX_QUESTION_CHARS} ký tự.`),
-    requestId: z.uuid().transform(v => v.toLowerCase()), documentIds: z.array(id).min(1).max(50).refine(v => new Set(v).size === v.length, 'Tài liệu không được trùng.').optional(),
-    answerMode: z.enum(['documents','auto','general']).default('auto'),
-  }).strict()), async (req,res) => sendData(req,res,await service.ask(req.auth,req.ids.conversationId,req.input)));
-  return { courses, conversations };
+  const limit = services.studentLimit || studentRateLimit();
+  router.get('/conversations', validate(historyQuerySchema, 'query', 'filters'), controller.list);
+  router.get(
+    '/courses/:courseId/conversations',
+    params('courseId'),
+    validate(historyQuerySchema.omit({ courseId: true }), 'query', 'filters'),
+    controller.listForCourse,
+  );
+  router.post(
+    '/courses/:courseId/conversations',
+    ...mutate,
+    params('courseId'),
+    validate(schemas.createConversation),
+    controller.create,
+  );
+  router.get(
+    '/conversations/:conversationId',
+    params('conversationId'),
+    validate(transcriptQuerySchema, 'query', 'filters'),
+    controller.get,
+  );
+  router.get(
+    '/conversations/:conversationId/formulas/:turnId/:blockId',
+    validate(schemas.formulaParams, 'params', 'ids'),
+    controller.formula,
+  );
+  router.delete(
+    '/conversations/:conversationId',
+    ...mutate,
+    params('conversationId'),
+    controller.remove,
+  );
+  router.post(
+    '/conversations/:conversationId/questions',
+    ...mutate,
+    limit,
+    params('conversationId'),
+    validate(schemas.askQuestion),
+    controller.ask,
+  );
+  return router;
 }

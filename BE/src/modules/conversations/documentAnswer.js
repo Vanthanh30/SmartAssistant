@@ -1,13 +1,15 @@
 // Local extractive ranking. No external provider calls or fabricated summaries.
 const accents = 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹ';
-const fold = text => text.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').toLowerCase();
+const fold = text => text.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
 const stop = new Set('la gi cua cac nhung mot nhieu trong tren ve cho toi hay ban the nao tai sao va voi duoc'.split(' '));
 export function cleanDocumentText(text) {
   let result = text.normalize('NFC').replace(/\r/g, '');
   // PDF glyph runs split accented syllables: “nhi ệ t”, “đ ộ”, “chuy ể n”.
-  const split = new RegExp(`(?<!\\p{L})([\\p{L}]{1,5}) +([${accents}${accents.toUpperCase()}]{1,2}) +(ng|nh|ch|[mnptciuy])(?=\\s|[.,;:!?)]|$)`, 'gu');
+  const split = new RegExp(`(?<!\\p{L})([A-Za-zđĐăâêôơưĂÂÊÔƠƯ]{1,5}) +([${accents}${accents.toUpperCase()}]{1,2}) +(ng|nh|ch|[mnptciuy])(?=\\s|[.,;:!?)]|$)(?:(?<=[iuy])|(?! +[${accents}${accents.toUpperCase()}]))`, 'gu');
   for (let i = 0; i < 2; i++) result = result.replace(split, (_, before, vowel, after) => before + vowel + after);
   const single = new RegExp(`(?<!\\p{L})([bcdfghjklmnpqrstvwxzđĐ]{1,3}) +([${accents}])(?=\\s|[.,;:!?)]|$)`, 'giu');
+  const initial = new RegExp(`(?<!\\p{L})([${accents}${accents.toUpperCase()}]) +(ng|nh|ch|[mnptciuy])(?=\\s|[.,;:!?)]|$)(?:(?<=[iuy])|(?! +[${accents}${accents.toUpperCase()}]))`, 'gu');
+  result = result.replace(initial, '$1$2');
   result = result.replace(single, '$1$2').replace(/\bcủ a\b/gu,'của').replace(/\bchứ a\b/gu,'chứa');
   return result.split('\n').filter(line => {
     const plain = fold(line).replace(/\s+/g, ' ').trim();
@@ -15,7 +17,7 @@ export function cleanDocumentText(text) {
       && !/^(hoc online|thay .*vna|trang \d+|page \d+)/.test(plain)
       && !/^\d+$/.test(plain);
   }).map(line => line.replace(/[ \t]+/g, ' ').trim()).join('\n')
-    .replace(/ +([,.;:!?])/g, '$1');
+    .replace(/ +([,.;:!?])/g, '$1').replace(/([Δ∆]) +([tT])/gu,'$1$2').replace(/\( +/g,'(').replace(/ +\)/g,')');
 }
 export function documentAnswer(sources, question = '') {
   const terms = [...new Set(fold(question).match(/[a-z0-9]+/g) || [])].filter(t => !stop.has(t));
@@ -59,14 +61,22 @@ export function documentAnswer(sources, question = '') {
 export function formatPassage(text) {
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
   const blocks = [];
-  let prose = '';
+  let prose = '', math = false;
   const flush = () => { if (prose) blocks.push(prose); prose = ''; };
   for (const line of lines) {
-    const formula = /[=≈∝]/.test(line);
+    const relation = /[=≈∝]/.test(line);
     const structural = /^(?:[*•●▪◦]|[-–]\s|[a-z][.)]\s|\d+[.)]\s|BÀI |CHƯƠNG )/.test(line) || /:$/.test(line);
-    if (formula || structural) { flush(); blocks.push(line); }
-    else if (blocks.length && /^[*•●▪◦]/.test(blocks.at(-1)) && !/[.!?:]$/.test(blocks.at(-1))) blocks[blocks.length - 1] += ' ' + line;
-    else { prose += (prose ? ' ' : '') + line; if (/[.!?]$/.test(line)) flush(); }
+    const fragment = !/[ăâđêôơư\u1EA0-\u1EF9]/iu.test(line) && /[A-Za-zα-ωΑ-Ω\d]/u.test(line)
+      && (line.match(/\p{L}+/gu)||[]).every(word=>word.length<=5);
+    if (relation || structural || math && fragment) {
+      flush(); blocks.push(line); math = relation || math && fragment && !structural;
+    } else {
+      const wasMath=math;
+      if(math)flush(); math=false;
+      if(!wasMath&&blocks.length&&/^[*•●▪◦]/u.test(blocks.at(-1))&&!/[.!?:]$/.test(blocks.at(-1)))blocks[blocks.length-1]+=' '+line;
+      else if (/^[A-Za-zα-ωΑ-Ω][^:]{0,20}:/.test(line)) { flush(); blocks.push(line); }
+      else { prose += (prose ? ' ' : '') + line; if (/[.!?]$/.test(line)) flush(); }
+    }
   }
   flush();
   return blocks.join('\n\n');

@@ -1,4 +1,4 @@
-export const isProcessing = document => ['queued','extracting','chunking','embedding','indexing'].includes(document.status) || (document.status === 'deleting' && !document.deletionRetryable);
+export const isProcessing = document => ['processing','queued','extracting','chunking','embedding','indexing'].includes(document.status) || (document.status === 'deleting' && !document.deletionRetryable);
 export function pollInterval(query) {
   if (query.state.error) return false;
   const data = query.state.data;

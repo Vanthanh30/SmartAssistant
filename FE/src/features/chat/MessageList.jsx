@@ -1,7 +1,11 @@
 import { Button } from "../../components/ui/Button.jsx";
 import { Sparkles, UserRound, Quote } from "lucide-react";
 import { AnswerContent } from "./AnswerContent.jsx";
+import { chatErrorMessage } from './errorMessage.js';
+import { useLayoutEffect, useRef } from 'react';
+import { scrollToLatestMessage } from './scrollTranscript.js';
 function AssistantAnswer({ message, onCitation }) {
+  if (message.status === 'failed') return <p className="chat-text">{chatErrorMessage(message.content)}</p>;
   return <AnswerContent content={message.content} blocks={message.blocks} citations={message.citations} onCitation={onCitation}/>;
 }
 export function MessageList({
@@ -9,16 +13,41 @@ export function MessageList({
     onCitation,
     onCheckRequest,
     pending = false,
+    pendingQuestion = null,
+    pendingRequestId = null,
 }) {
+    const transcriptRef = useRef(null);
+    const visibleMessages = messages.filter(message => !(pending && pendingRequestId &&
+        message.role === 'assistant' && message.requestId === pendingRequestId && message.status === 'processing'));
+    if (pending && pendingQuestion && pendingRequestId) {
+        if (!messages.some(message => message.role === 'user' && message.requestId === pendingRequestId)) {
+            visibleMessages.push({ id: `${pendingRequestId}:pending-user`, role: 'user', content: pendingQuestion, citations: [], status: 'sent' });
+        }
+        if (!messages.some(message => message.role === 'assistant' && message.requestId === pendingRequestId && message.status !== 'processing')) {
+            visibleMessages.push({ id: `${pendingRequestId}:pending-answer`, role: 'assistant', content: 'Đang tìm câu trả lời…', citations: [], status: 'processing' });
+        }
+    }
+    const latest = visibleMessages.at(-1);
+    const latestKey = latest ? `${latest.id}:${latest.status}:${latest.content}` : '';
+    useLayoutEffect(() => {
+        const container = transcriptRef.current;
+        if (!container || !latestKey) return;
+        const frame = requestAnimationFrame(() => {
+            container.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            scrollToLatestMessage(container);
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [latestKey]);
     return (
         <div
+            ref={transcriptRef}
             className="chat-transcript"
             aria-live="polite"
             role="region"
             aria-label="Hội thoại với trợ lý"
             tabIndex={0}
         >
-            {messages.map((message) => (
+            {visibleMessages.map((message) => (
                 <article key={message.id} className={`chat-message ${message.role}`}>
                     <div className="message-author">
                         {message.role === "user" ? (
@@ -39,10 +68,7 @@ export function MessageList({
                     ) : (
                         <p className="chat-text">{message.content}</p>
                     )}
-                    {message.role === "user" && message.status === "failed" && (
-                        <p role="status">Yêu cầu thất bại ({message.errorCode}).</p>
-                    )}
-                    {message.role === "user" && message.status === "processing" && (
+                    {message.role === "user" && message.status === "processing" && !pending && (
                         <p role="status">
                             Yêu cầu chưa có kết quả xác nhận.{" "}
                             {onCheckRequest && (
@@ -55,10 +81,6 @@ export function MessageList({
                             )}
                         </p>
                     )}
-                    {message.status === "insufficient_context" &&
-                        message.role === "assistant" && (
-                            <p className="hint">Chưa đủ căn cứ trong tài liệu.</p>
-                        )}
                     {message.citations.length > 0 && (
                         <div className="answer-sources">
                             <span className="hint">Nguồn tài liệu</span>

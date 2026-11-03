@@ -38,7 +38,7 @@ export function AuthForm({ mode }) {
       if (isAdmin && data.user.role !== 'admin') {
         await logout(data.csrfToken);
         client.setQueryData(sessionKey, null);
-        throw new Error('Tài khoản này không có quyền quản trị. Vui lòng dùng trang đăng nhập sinh viên.');
+        throw new Error('Tài khoản này không có quyền quản trị. Vui lòng dùng trang đăng nhập học sinh.');
       }
       return data;
     },
@@ -101,7 +101,7 @@ export function AuthForm({ mode }) {
       <h1>{isAdmin?"Đăng nhập quản trị":isRegister ? "Tạo tài khoản" : "Đăng nhập"}</h1>
       <p>
         {isRegister
-          ? "Bắt đầu với tài khoản sinh viên của bạn."
+          ? "Bắt đầu với tài khoản học sinh của bạn."
           : isAdmin?"Sử dụng tài khoản có quyền admin để tiếp tục.":"Tiếp tục học từ tài liệu của bạn."}
       </p>
       {auth.isError && <p role="alert">{auth.error.message}</p>}
@@ -165,7 +165,7 @@ export function AuthForm({ mode }) {
               : "Đăng nhập"}
         </button>
       </form>
-      {isAdmin?<p><Link to="/login">← Đăng nhập sinh viên</Link></p>:<p>
+      {isAdmin?<p><Link to="/login">← Đăng nhập học sinh</Link></p>:<p>
         {isRegister ? "Đã có tài khoản? " : "Chưa có tài khoản? "}
         <Link to={isRegister ? "/login" : "/register"}>
           {isRegister ? "Đăng nhập" : "Đăng ký"}

@@ -6,7 +6,7 @@ import { Modal } from '../../components/Modal.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 GlobalWorkerOptions.workerSrc = workerUrl;
 const assets = `${import.meta.env.BASE_URL}pdfjs/`;
-export function PdfViewer({ document, initialPage = 1, loadContent = pdfContent, compact = false }) {
+export function PdfViewer({ document, initialPage = 1, pageFrom = 1, pageTo, loadContent = pdfContent, compact = false }) {
   const canvas = useRef(null);
   const [expanded, setExpanded] = useState(false);
   const [pdf, setPdf] = useState(null);
@@ -23,11 +23,11 @@ export function PdfViewer({ document, initialPage = 1, loadContent = pdfContent,
         if (disposed) return;
         task = getDocument({ data: bytes, isEvalSupported: false, useSystemFonts: true,
           standardFontDataUrl: assets + 'standard_fonts/', cMapUrl: assets + 'cmaps/', cMapPacked: true, wasmUrl: assets + 'wasm/' });
-        const loaded = await task.promise; if (!disposed) { setPage(Math.max(1, Math.min(initialPage, loaded.numPages))); setPdf(loaded); }
+        const loaded = await task.promise; if (!disposed) { const first=Math.min(Math.max(1,pageFrom),loaded.numPages),last=Math.max(first,Math.min(pageTo||loaded.numPages,loaded.numPages));setPage(Math.max(first, Math.min(initialPage,last))); setPdf(loaded); }
       } catch (failure) { if (!disposed) { setError(failure.message); setLoading(false); } }
     })();
     return () => { disposed = true; abort.abort(); void task?.destroy(); };
-  }, [document.id, initialPage, retry, loadContent]);
+  }, [document.id, initialPage, pageFrom, pageTo, retry, loadContent]);
   useEffect(() => {
     if (!pdf) return;
     let disposed = false; let render;
@@ -49,19 +49,26 @@ export function PdfViewer({ document, initialPage = 1, loadContent = pdfContent,
     })();
     return () => { disposed = true; render?.cancel(); };
   }, [pdf, page, expanded]);
-  const navigate = next => { setLoading(true); setPage(next); setError(''); };
+  const firstPage=pdf?Math.min(Math.max(1,pageFrom),pdf.numPages):Math.max(1,pageFrom);
+  const lastPage=pdf?Math.max(firstPage,Math.min(pageTo||pdf.numPages,pdf.numPages)):(pageTo||Infinity);
+  const navigate = next => { setLoading(true); setPage(Math.max(firstPage,Math.min(next,lastPage))); setError(''); };
   const content = <>
     {error ? <p role="alert" className="field-error">{error} <Button onClick={() => { setPdf(null); setPage(1); setError(''); setLoading(true); setRetry(value => value + 1); }}>Thử lại</Button></p> : <>
-      <div className="pdf-controls"><Button disabled={!pdf || page <= 1 || loading} onClick={() => navigate(page - 1)}>Trang trước</Button><span>Trang {page}/{pdf?.numPages ?? '…'}</span><Button disabled={!pdf || page >= pdf.numPages || loading} onClick={() => navigate(page + 1)}>Trang sau</Button></div>
-      {loading && <p role="status">Đang mở PDF…</p>}<div className="pdf-canvas"><canvas ref={canvas} role="img" aria-label={`Nội dung PDF trang ${page}`}/></div>
-      {!compact && <p className="hint">Viewer hiển thị trang PDF; hình, bảng và công thức có thể khác nội dung văn bản trích xuất.</p>}</>}
+      <div className="pdf-controls"><Button disabled={!pdf || page <= firstPage || loading} onClick={() => navigate(page - 1)}>Trang trước</Button><span>Trang {page}/{pdf?.numPages ?? '…'}</span><Button disabled={!pdf || page >= lastPage || loading} onClick={() => navigate(page + 1)}>Trang sau</Button></div>
+      {loading && <p role="status">Đang mở PDF…</p>}<div className="pdf-canvas">
+        {expanded ? <canvas ref={canvas} role="img" aria-label={`Nội dung PDF trang ${page}`}/> :
+          <button type="button" className="pdf-page-open" disabled={!pdf || loading}
+            aria-label={`Mở lớn ${document.fileName}, trang ${page}`}
+            onClick={() => { setLoading(true); setExpanded(true); }}>
+            <canvas ref={canvas} role="img" aria-label={`Nội dung PDF trang ${page}`}/>
+          </button>}
+      </div></>}
   </>;
   return <section className="pdf-viewer" aria-label={`Xem PDF ${document.fileName}`}>
     {!compact && <h3>{document.fileName}</h3>}
-    <Button onClick={() => { setLoading(true); setExpanded(true); }}>Phóng lớn PDF</Button>
     {!expanded && content}
     <Modal open={expanded} onOpenChange={value => { setLoading(true); setExpanded(value); }}
-      title={document.fileName} description="Xem tài liệu PDF ở khung lớn. Nhấn Escape hoặc Đóng để trở lại."
+      title={document.fileName}
       className="pdf-expanded-modal">
       <div className="actions"><Button onClick={() => { setLoading(true); setExpanded(false); }}>Đóng</Button></div>
       {expanded && content}
